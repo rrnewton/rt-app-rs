@@ -9,6 +9,11 @@ mod args;
 mod syscalls;
 #[allow(dead_code)]
 mod taskgroups;
+// Foundation modules — public API consumed by modules ported later.
+#[allow(dead_code)]
+mod types;
+#[allow(dead_code)]
+mod utils;
 
 use clap::Parser;
 
