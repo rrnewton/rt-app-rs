@@ -1,10 +1,11 @@
 ---
 title: 'Port rt-app C to Rust: master epic'
-status: open
+status: closed
 priority: 0
 issue_type: epic
 created_at: 2026-02-20T20:34:17.762268068+00:00
-updated_at: 2026-02-20T20:39:02.680070562+00:00
+updated_at: 2026-02-20T21:25:44.078014768+00:00
+closed_at: 2026-02-20T21:25:44.078014668+00:00
 ---
 
 # Description
