@@ -11,6 +11,25 @@ preservers safety.
 
 Use minibeads (described below) issues to track the status of the port.
 
+Idiomatic Rust and Library Choices
+========================================
+
+Use idiomatic, popular, well-maintained Rust crates rather than hand-rolling
+functionality. The port should feel like natural Rust, not a transliteration of
+C. Key library choices:
+
+- **serde + serde_json** for JSON config parsing (derive-based deserialization,
+  not manual token walking as the C code does with json-c)
+- **clap** (derive API) for CLI argument parsing
+- **nix** for POSIX/Linux syscall wrappers (sched, signal, mman, pthread, etc.)
+- **libc** for low-level types and constants not covered by nix
+- **log + env_logger** for structured logging
+- **thiserror** or **anyhow** for error handling (no raw exit codes or fprintf+exit)
+
+When a well-known crate exists for a task, use it. Do not reimplement standard
+functionality (time arithmetic, bitflags, etc.) when a crate like `bitflags`
+or std's `Duration` handles it idiomatically.
+
 Development Guidelines
 =======================================================
 
