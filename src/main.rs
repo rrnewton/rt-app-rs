@@ -1,30 +1,6 @@
-// Modules are built incrementally; suppress dead-code warnings until
-// the main loop and config parsing are ported and wire everything together.
-#[allow(dead_code)]
-mod affinity;
-mod args;
-#[allow(dead_code)]
-mod config;
-// Core runtime engine: thread lifecycle, event dispatch, calibration.
-#[allow(dead_code)]
-mod engine;
-#[allow(dead_code)]
-mod gnuplot;
-// Syscall wrappers are building blocks for the rt-app port; not all items are
-// consumed from main.rs yet, but they will be as more modules are ported.
-#[allow(dead_code)]
-mod syscalls;
-#[allow(dead_code)]
-mod taskgroups;
-// Foundation modules — public API consumed by modules ported later.
-#[allow(dead_code)]
-mod types;
-#[allow(dead_code)]
-mod utils;
-
 use clap::Parser;
 
-use crate::args::{Cli, ConfigSource};
+use rt_app_rs::args::{Cli, ConfigSource};
 
 fn main() {
     let cli = Cli::parse();

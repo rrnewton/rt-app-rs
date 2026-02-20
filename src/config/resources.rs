@@ -51,6 +51,11 @@ impl ResourceTable {
     }
 
     /// Number of registered resources.
+    /// Whether the table contains no resources.
+    pub fn is_empty(&self) -> bool {
+        self.resources.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.resources.len()
     }

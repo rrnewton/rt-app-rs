@@ -1,22 +1,23 @@
 ---
 title: 'Compatibility testing harness: C vs Rust comparison'
-status: open
+status: closed
 priority: 2
 issue_type: task
 depends_on:
-  rtapp-821aa: blocks
   rtapp-812a2: blocks
-  rtapp-7c9cd: blocks
-  rtapp-49a52: blocks
-  rtapp-4b15d: blocks
-  rtapp-450e3: blocks
-  rtapp-52f69: blocks
-  rtapp-f4bb8: blocks
-  rtapp-1ec29: blocks
+  rtapp-821aa: blocks
   rtapp-075d2: parent-child
   rtapp-f81ac: blocks
+  rtapp-49a52: blocks
+  rtapp-f4bb8: blocks
+  rtapp-4b15d: blocks
+  rtapp-7c9cd: blocks
+  rtapp-1ec29: blocks
+  rtapp-52f69: blocks
+  rtapp-450e3: blocks
 created_at: 2026-02-20T20:35:34.783946414+00:00
-updated_at: 2026-02-20T20:39:02.682175103+00:00
+updated_at: 2026-02-20T21:21:47.101581034+00:00
+closed_at: 2026-02-20T21:21:47.101580914+00:00
 ---
 
 # Description
