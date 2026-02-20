@@ -1,0 +1,24 @@
+---
+title: Comprehensive test suite
+status: open
+priority: 1
+issue_type: task
+depends_on:
+  rtapp-1: parent-child
+  rtapp-4: blocks
+  rtapp-8: blocks
+  rtapp-5: blocks
+  rtapp-7: blocks
+  rtapp-11: blocks
+  rtapp-3: blocks
+  rtapp-2: blocks
+  rtapp-10: blocks
+  rtapp-9: blocks
+  rtapp-6: blocks
+created_at: 2026-02-20T20:35:29.989070505+00:00
+updated_at: 2026-02-20T20:36:54.999501031+00:00
+---
+
+# Description
+
+Create comprehensive tests: (1) Unit tests for each module (types, utils, config parsing, etc). (2) Integration tests running rt-app-rs against all 11 tutorial example JSON configs plus template, custom-slice, spreading-tasks, browser-*, mp3-*, video-* configs from doc/examples/. (3) Compatibility/comparison tests: run both original C rt-app and Rust port against same configs, compare log output format, verify identical behavior. (4) Edge case tests: empty phases, zero-duration events, fork chains, barrier synchronization, timer modes. Target good code coverage.

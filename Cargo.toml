@@ -1,0 +1,18 @@
+[package]
+name = "rt-app-rs"
+version = "0.1.0"
+edition = "2021"
+description = "A pure Rust port of rt-app, the real-time workload simulator"
+license = "GPL-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+nix = { version = "0.29", features = ["sched", "signal", "pthread", "process", "fs", "mman"] }
+libc = "0.2"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3"
