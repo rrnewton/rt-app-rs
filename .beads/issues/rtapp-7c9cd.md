@@ -1,6 +1,6 @@
 ---
 title: Port CPU affinity and NUMA binding
-status: open
+status: closed
 priority: 2
 issue_type: task
 depends_on:
@@ -8,7 +8,8 @@ depends_on:
   rtapp-450e3: blocks
   rtapp-075d2: parent-child
 created_at: 2026-02-20T20:35:22.356735970+00:00
-updated_at: 2026-02-20T20:39:02.681846447+00:00
+updated_at: 2026-02-20T20:52:04.470651850+00:00
+closed_at: 2026-02-20T20:52:04.470651739+00:00
 ---
 
 # Description

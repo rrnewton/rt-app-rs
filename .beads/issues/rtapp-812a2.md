@@ -1,15 +1,16 @@
 ---
 title: Port SCHED_DEADLINE syscall wrappers (libdl/)
-status: open
+status: closed
 priority: 2
 issue_type: task
 depends_on:
-  rtapp-1ec29: blocks
-  rtapp-4b15d: blocks
   rtapp-450e3: blocks
   rtapp-075d2: parent-child
+  rtapp-1ec29: blocks
+  rtapp-4b15d: blocks
 created_at: 2026-02-20T20:35:13.127784465+00:00
-updated_at: 2026-02-20T20:39:02.681537923+00:00
+updated_at: 2026-02-20T20:52:04.467243546+00:00
+closed_at: 2026-02-20T20:52:04.467243436+00:00
 ---
 
 # Description

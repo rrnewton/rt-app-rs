@@ -1,14 +1,15 @@
 ---
 title: Port cgroup/taskgroup management (rt-app_taskgroups.c)
-status: open
+status: closed
 priority: 2
 issue_type: task
 depends_on:
-  rtapp-450e3: blocks
   rtapp-1ec29: blocks
   rtapp-075d2: parent-child
+  rtapp-450e3: blocks
 created_at: 2026-02-20T20:35:06.945797173+00:00
-updated_at: 2026-02-20T20:39:02.681385684+00:00
+updated_at: 2026-02-20T20:52:04.468861673+00:00
+closed_at: 2026-02-20T20:52:04.468861553+00:00
 ---
 
 # Description
