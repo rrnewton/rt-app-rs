@@ -3,7 +3,11 @@ name = "rt-app-rs"
 version = "0.1.0"
 edition = "2021"
 description = "A pure Rust port of rt-app, the real-time workload simulator"
-license = "GPL-2.0"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/rrnewton/rt-app-rs"
+homepage = "https://github.com/rrnewton/rt-app-rs"
+keywords = ["real-time", "scheduling", "benchmark", "workload", "simulator"]
+categories = ["command-line-utilities", "simulation"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
