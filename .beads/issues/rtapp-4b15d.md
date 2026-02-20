@@ -1,19 +1,20 @@
 ---
 title: Port thread engine and event dispatch (rt-app.c core)
-status: open
+status: closed
 priority: 1
 issue_type: task
 depends_on:
-  rtapp-821aa: blocks
-  rtapp-1ec29: blocks
-  rtapp-49a52: blocks
-  rtapp-450e3: blocks
-  rtapp-075d2: parent-child
-  rtapp-52f69: blocks
   rtapp-7c9cd: blocks
+  rtapp-52f69: blocks
+  rtapp-450e3: blocks
+  rtapp-1ec29: blocks
   rtapp-f81ac: blocks
+  rtapp-075d2: parent-child
+  rtapp-49a52: blocks
+  rtapp-821aa: blocks
 created_at: 2026-02-20T20:34:54.441190986+00:00
-updated_at: 2026-02-20T20:39:02.681040684+00:00
+updated_at: 2026-02-20T21:09:42.648770604+00:00
+closed_at: 2026-02-20T21:09:42.648770504+00:00
 ---
 
 # Description

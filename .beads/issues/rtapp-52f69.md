@@ -1,14 +1,15 @@
 ---
 title: Port utilities module (rt-app_utils.c/h)
-status: open
+status: closed
 priority: 1
 issue_type: task
 depends_on:
-  rtapp-1ec29: blocks
-  rtapp-450e3: blocks
   rtapp-075d2: parent-child
+  rtapp-450e3: blocks
+  rtapp-1ec29: blocks
 created_at: 2026-02-20T20:34:39.115930838+00:00
-updated_at: 2026-02-20T20:39:02.680700291+00:00
+updated_at: 2026-02-20T21:09:42.647070743+00:00
+closed_at: 2026-02-20T21:09:42.647070643+00:00
 ---
 
 # Description

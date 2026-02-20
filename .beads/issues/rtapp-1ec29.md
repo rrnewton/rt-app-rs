@@ -1,13 +1,14 @@
 ---
 title: Port core types and data model (rt-app_types.h)
-status: open
+status: closed
 priority: 1
 issue_type: task
 depends_on:
-  rtapp-075d2: parent-child
   rtapp-450e3: blocks
+  rtapp-075d2: parent-child
 created_at: 2026-02-20T20:34:32.436200287+00:00
-updated_at: 2026-02-20T20:39:02.680522633+00:00
+updated_at: 2026-02-20T21:09:42.645036958+00:00
+closed_at: 2026-02-20T21:09:42.645036858+00:00
 ---
 
 # Description
