@@ -3,6 +3,8 @@
 #[allow(dead_code)]
 mod affinity;
 mod args;
+#[allow(dead_code)]
+mod config;
 // Core runtime engine: thread lifecycle, event dispatch, calibration.
 #[allow(dead_code)]
 mod engine;

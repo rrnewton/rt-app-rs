@@ -1,15 +1,16 @@
 ---
 title: Port JSON config parser (rt-app_parse_config.c)
-status: open
+status: closed
 priority: 1
 issue_type: task
 depends_on:
-  rtapp-075d2: parent-child
-  rtapp-1ec29: blocks
-  rtapp-52f69: blocks
   rtapp-450e3: blocks
+  rtapp-1ec29: blocks
+  rtapp-075d2: parent-child
+  rtapp-52f69: blocks
 created_at: 2026-02-20T20:34:46.762365088+00:00
-updated_at: 2026-02-20T20:39:02.680874663+00:00
+updated_at: 2026-02-20T21:02:06.184589217+00:00
+closed_at: 2026-02-20T21:02:06.184589117+00:00
 ---
 
 # Description
