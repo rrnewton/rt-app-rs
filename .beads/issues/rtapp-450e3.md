@@ -1,12 +1,13 @@
 ---
 title: 'Project scaffolding: Cargo.toml, module structure, CI'
-status: open
+status: closed
 priority: 0
 issue_type: task
 depends_on:
-  rtapp-1: parent-child
+  rtapp-075d2: parent-child
 created_at: 2026-02-20T20:34:23.829720626+00:00
-updated_at: 2026-02-20T20:35:43.511928890+00:00
+updated_at: 2026-02-20T20:39:02.680339457+00:00
+closed_at: 2026-02-20T20:38:47.273620685+00:00
 ---
 
 # Description

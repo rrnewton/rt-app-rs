@@ -4,11 +4,11 @@ status: open
 priority: 1
 issue_type: task
 depends_on:
-  rtapp-1: parent-child
-  rtapp-2: blocks
-  rtapp-3: blocks
+  rtapp-1ec29: blocks
+  rtapp-450e3: blocks
+  rtapp-075d2: parent-child
 created_at: 2026-02-20T20:34:39.115930838+00:00
-updated_at: 2026-02-20T20:35:54.550723485+00:00
+updated_at: 2026-02-20T20:39:02.680700291+00:00
 ---
 
 # Description
