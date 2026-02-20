@@ -3,6 +3,8 @@
 #[allow(dead_code)]
 mod affinity;
 mod args;
+#[allow(dead_code)]
+mod gnuplot;
 // Syscall wrappers are building blocks for the rt-app port; not all items are
 // consumed from main.rs yet, but they will be as more modules are ported.
 #[allow(dead_code)]
