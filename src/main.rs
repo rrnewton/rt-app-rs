@@ -3,6 +3,9 @@
 #[allow(dead_code)]
 mod affinity;
 mod args;
+// Core runtime engine: thread lifecycle, event dispatch, calibration.
+#[allow(dead_code)]
+mod engine;
 #[allow(dead_code)]
 mod gnuplot;
 // Syscall wrappers are building blocks for the rt-app port; not all items are
