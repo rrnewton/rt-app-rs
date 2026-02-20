@@ -284,6 +284,10 @@ fn parse_from_value(root: &serde_json::Value) -> Result<RtAppConfig, ConfigError
 mod tests {
     use super::*;
 
+    fn fixture_path(rel: &str) -> String {
+        format!("{}/{}", env!("CARGO_MANIFEST_DIR"), rel)
+    }
+
     #[test]
     fn strip_block_comments() {
         let input = r#"{ /* comment */ "key": "value" }"#;
@@ -365,10 +369,9 @@ mod tests {
 
     #[test]
     fn parse_example1() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example1.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example1.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         assert_eq!(config.tasks[0].name, "thread0");
@@ -385,10 +388,9 @@ mod tests {
 
     #[test]
     fn parse_example2() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example2.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example2.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         assert_eq!(config.tasks[0].num_instances, 1);
@@ -399,10 +401,9 @@ mod tests {
 
     #[test]
     fn parse_example3_phases() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example3.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example3.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         assert_eq!(config.tasks[0].phases.len(), 2);
@@ -411,10 +412,9 @@ mod tests {
 
     #[test]
     fn parse_example4_suspend_resume() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example4.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example4.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 2);
         // thread0 has run, resume, suspend
@@ -424,10 +424,9 @@ mod tests {
 
     #[test]
     fn parse_example6_mem_io() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example6.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example6.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         let events = &config.tasks[0].phases[0].events;
@@ -438,10 +437,9 @@ mod tests {
 
     #[test]
     fn parse_example7_barriers() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example7.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example7.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 2);
         // task0 has runtime1, sleep1, barrier1, runtime2, barrier2, runtime3, sleep3, barrier3
@@ -455,10 +453,9 @@ mod tests {
 
     #[test]
     fn parse_example8_cpus() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example8.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example8.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         assert_eq!(config.tasks[0].cpus, vec![2]);
@@ -472,10 +469,9 @@ mod tests {
 
     #[test]
     fn parse_example9_fork() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example9.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example9.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 3);
         // thread2 has instance = 0
@@ -494,10 +490,9 @@ mod tests {
 
     #[test]
     fn parse_example10_taskgroup() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example10.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example10.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         assert_eq!(config.tasks[0].taskgroup.as_deref(), Some("/tg1"));
@@ -505,10 +500,9 @@ mod tests {
 
     #[test]
     fn parse_example11_phase_taskgroups() {
-        let content = std::fs::read_to_string(
-            "/home/newton/work/rt-app-rs/rt-app-orig/doc/examples/tutorial/example11.json",
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example11.json"))
+                .unwrap();
         let config = parse_config_str(&content).unwrap();
         assert_eq!(config.tasks.len(), 1);
         assert_eq!(config.tasks[0].phases.len(), 3);
