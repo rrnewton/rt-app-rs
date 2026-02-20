@@ -172,7 +172,7 @@ impl FromStr for SchedulingPolicy {
 // ---------------------------------------------------------------------------
 
 /// The kind of operation an event performs on a resource.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ResourceType {
     #[serde(rename = "unknown")]
     Unknown,
