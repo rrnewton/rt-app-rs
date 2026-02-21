@@ -1,34 +1,100 @@
 {
-	/*
-	 * Simple use case which creates 10% load
-	 * for 6 seconds.
-	 * A "sleep" : 0 has been added so the file can be used by tune_json.py to
-	 * use a sleep event instead of the timer. In this latter case, you need
-	 * to set the timer's period to 0
-	 */
+	/* Quick-reference template showing all options.
+	 * See doc/tutorial.md for full details.
+	 *
+	 * Units: [us] = microseconds, [ns] = nanoseconds, [B] = bytes,
+	 *        [s] = seconds, [MB] = megabytes, [loops] = calibration loops */
+
+	"global" : {
+		"duration" : 6,            // [s] (-1 = run until threads exit)
+		"calibration" : "CPU0",    // "CPUn" string, or integer [ns/loop] to skip calibration
+		"default_policy" : "SCHED_OTHER",  // SCHED_OTHER|SCHED_IDLE|SCHED_RR|SCHED_FIFO|SCHED_DEADLINE
+		"pi_enabled" : false,      // priority inheritance for mutexes
+		"lock_pages" : false,      // mlockall (only useful for RT policies)
+		"logdir" : "./",           // directory must already exist
+		"log_basename" : "rt-app",
+		"log_size" : "file",       // "file"|"Disable"|integer [MB] (circular buffer)
+		"ftrace" : "none",         // "none" or comma-separated: main,task,run,loop,stats
+		"gnuplot" : true,          // generate per-thread gnuplot scripts
+		"io_device" : "/dev/null", // target for iorun events (caution: destructive writes)
+		"mem_buffer_size" : 4194304,  // [B] buffer for mem/iorun events
+		"cumulative_slack" : false    // accumulate slack across timer events in a phase
+	},
+
+	"resources" : {
+		/* Optional; resources are auto-created from event references.
+		 * Explicit declaration only needed to set type. */
+		"mutex1" : { "type" : "mutex" },     // type: mutex (default) | cond | timer | barrier | mem | iorun
+		"cond1"  : { "type" : "cond" }
+	},
+
 	"tasks" : {
-		/* no 'loop' value at task level means loop indefinitely (-1) */
 		"thread0" : {
-			"instance" : 1,  /* number of threads to be created */
-			"loop" : -1,  /* loop forever (see 'duration' below) */
+			"instance" : 1,        // number of pthreads to spawn (0 = struct only, no thread)
+			"loop" : -1,           // [loops] -1 = infinite, >0 = fixed count
+			"delay" : 0,           // [us] initial delay before first loop
 
-			"run" :   10000,  /* create load [us]: when awaken,
-				execute `floor (10000*1000 / pLoad[ns])` loops */
+			/* Scheduling (also valid per-phase) */
+			"policy" : "SCHED_OTHER",  // SCHED_OTHER|SCHED_IDLE|SCHED_RR|SCHED_FIFO|SCHED_DEADLINE
+			"priority" : 0,            // RT priority (0 for CFS/DEADLINE)
+			// "dl-runtime" : 0,       // [us] SCHED_DEADLINE budget
+			// "dl-period"  : 0,       // [us] SCHED_DEADLINE period (default = dl-runtime)
+			// "dl-deadline" : 0,      // [us] SCHED_DEADLINE deadline (default = dl-period)
+			// "util_min" : 0,         // uclamp min (0-1024)
+			// "util_max" : 1024,      // uclamp max (0-1024)
 
-			"sleep" : 0, /* sleep 0s - which is somewhat useless */
+			/* CPU affinity (also valid per-phase; phase overrides task) */
+			"cpus" : [0],
+
+			/* Taskgroup / cgroup (also valid per-phase) */
+			// "taskgroup" : "/mygroup",  // cgroup path; "" = no group, "/" = root
+
+			/* NUMA (also valid per-phase) */
+			// "nodes_membind" : [0, 1],  // NUMA node binding
+
+			/* Events -- executed in order, per loop iteration.
+			 * Duplicate keys are auto-renamed: run, run1, run2, ... */
+			"run"   : 10000,       // [us] CPU burn — workload scales with CPU frequency
+			"sleep" : 0,           // [us] sleep
+			// "runtime" : 10000,  // [us] CPU burn — wall-clock duration, frequency-invariant
+			// "mem" : 1024,       // [B] write N bytes to memory buffer
+			// "iorun" : 1024,     // [B] write N bytes to io_device
+			// "yield" : 0,        // sched_yield (value ignored)
 
 			"timer" : { "ref" : "unique", "period" : 100000 }
-			/* wake up thread every 100000 us */
+			// Timer wakes thread periodically; period in [us].
+			// "ref": "unique" = per-instance timer, or a shared name string.
+
+			// "lock" : "mutex1",     // acquire named mutex
+			// "unlock" : "mutex1",   // release named mutex
+			// "wait" : "cond1",      // pthread_cond_wait on named resource
+			// "signal" : "cond1",    // pthread_cond_signal
+			// "broad" : "cond1",     // pthread_cond_broadcast
+			// "sync" : "cond1",      // signal + wait (atomic)
+			// "barrier" : "bar1",    // wait at named barrier
+
+			// "suspend" : "thread1", // suspend target thread
+			// "resume" : "thread1",  // resume target thread
+
+			// "fork" : { "ref" : "child_thread", "prio" : 0 }
+			// Fork a new thread from a task with instance=0.
+		},
+
+		/* Multi-phase example */
+		"thread1" : {
+			"instance" : 1,
+			"phases" : {
+				"phase0" : {
+					"loop" : 5,        // [loops] run this phase 5 times, then advance
+					"run"  : 5000,     // [us]
+					"sleep" : 5000     // [us]
+				},
+				"phase1" : {
+					"loop" : 3,        // [loops]
+					"run"  : 20000,    // [us]
+					"timer" : { "ref" : "unique", "period" : 50000 }  // [us]
+				}
+			}
 		}
-	},
-	"global" : {
-		"duration" : 6,  /* run for a maximum of 6s total */
-		"calibration" : "CPU0",   /* calibrate on CPU0 */
-		"default_policy" : "SCHED_OTHER",
-		"pi_enabled" : false,
-		"lock_pages" : false,
-		"logdir" : "./",
-		"log_basename" : "rt-app2",
-		"gnuplot" : true
 	}
 }
