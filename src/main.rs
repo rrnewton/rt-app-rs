@@ -170,14 +170,39 @@ fn run_calibration(_config: &RtAppConfig, opts: &AppOptions) -> Result<NsPerLoop
     // Run calibration
     info!("running CPU calibration (this may take a few seconds)...");
 
-    // If a specific CPU is requested, we could pin to it here
-    // For now, we run calibration on the current CPU
-    if opts.calib_cpu >= 0 {
-        debug!("calibration requested on CPU {}", opts.calib_cpu);
-        // CPU pinning for calibration would go here
+    // Pin to the requested CPU during calibration (matching C behavior).
+    // This ensures calibration measures the correct CPU's performance.
+    let orig_affinity = if opts.calib_cpu >= 0 {
+        use nix::sched::{sched_getaffinity, sched_setaffinity, CpuSet};
+        use nix::unistd::Pid;
+
+        debug!("pinning to CPU {} for calibration", opts.calib_cpu);
+
+        // Save original affinity
+        let orig = sched_getaffinity(Pid::from_raw(0)).ok();
+
+        // Set affinity to calibration CPU
+        let mut calib_set = CpuSet::new();
+        if calib_set.set(opts.calib_cpu as usize).is_ok() {
+            if let Err(e) = sched_setaffinity(Pid::from_raw(0), &calib_set) {
+                warn!("failed to pin to CPU {}: {}", opts.calib_cpu, e);
+            }
+        }
+        orig
+    } else {
+        None
+    };
+
+    let result = calibrate_cpu_cycles(ClockId::CLOCK_MONOTONIC);
+
+    // Restore original affinity
+    if let Some(orig) = orig_affinity {
+        use nix::sched::sched_setaffinity;
+        use nix::unistd::Pid;
+        let _ = sched_setaffinity(Pid::from_raw(0), &orig);
     }
 
-    calibrate_cpu_cycles(ClockId::CLOCK_MONOTONIC).ok_or(AppError::CalibrationFailed)
+    result.ok_or(AppError::CalibrationFailed)
 }
 
 // ---------------------------------------------------------------------------
