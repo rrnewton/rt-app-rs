@@ -208,11 +208,14 @@ impl WorkloadGenerator {
         }
 
         // Generate 0-2 barriers (need multiple threads to be useful)
+        // NOTE: Barriers are NOT declared in the resources section — they are
+        // auto-created when first referenced in a barrier event. C rt-app
+        // rejects explicit barrier declarations with "Invalid type of resource barrier".
         if state.thread_names.len() > 1 {
             let num_barriers = self.random_range(0, 3);
             for i in 0..num_barriers {
                 let name = format!("barrier{}", i);
-                resources.insert(name.clone(), json!({"type": "barrier"}));
+                // Don't add to resources section — just track for event generation
                 state.barriers.push(ResourceName(name));
             }
         }
