@@ -46,6 +46,9 @@ pub const FORKS_LIMIT: u32 = 1024;
 pub struct EngineState {
     /// Global flag: set to false to request shutdown.
     pub continue_running: AtomicBool,
+    /// Set to true when a thread fails fatally (e.g., scheduling error).
+    /// Checked by main to determine exit code.
+    pub thread_failed: AtomicBool,
     /// Number of threads currently running (including forked ones).
     pub running_threads: AtomicI32,
     /// Calibrated ns-per-loop value.
@@ -163,8 +166,15 @@ pub fn thread_body(args: ThreadBodyArgs) {
         sleep_until_monotonic(wake_at_ns);
     }
 
-    // Set scheduling params.
-    apply_initial_scheduling(index, &mut tdata, &state);
+    // Set scheduling params. Failure is fatal (matching C behavior).
+    if let Err(_e) = apply_initial_scheduling(index, &mut tdata, &state) {
+        // Mark that a thread failed (for exit code in main).
+        state.thread_failed.store(true, Ordering::SeqCst);
+        // Signal global shutdown so other threads exit.
+        state.continue_running.store(false, Ordering::SeqCst);
+        info!("[{index}] exiting due to scheduling failure.");
+        return;
+    }
 
     // Main phase loop.
     run_phase_loop(
@@ -422,7 +432,14 @@ fn sleep_until_monotonic(target_ns: u64) {
 }
 
 /// Apply initial scheduling parameters to the calling thread.
-fn apply_initial_scheduling(index: ThreadIndex, tdata: &mut ThreadData, _state: &EngineState) {
+///
+/// Returns `Err` if scheduling fails, which should be treated as fatal
+/// (matching C rt-app behavior which exits on pthread_setschedparam failure).
+fn apply_initial_scheduling(
+    index: ThreadIndex,
+    tdata: &mut ThreadData,
+    _state: &EngineState,
+) -> Result<(), scheduling::SchedError> {
     if let Some(ref sched_data) = tdata.sched_data {
         info!(
             "[{index}] starting with {} policy, priority {}",
@@ -435,7 +452,10 @@ fn apply_initial_scheduling(index: ThreadIndex, tdata: &mut ThreadData, _state: 
                 }
             }
             Err(e) => {
+                // C rt-app exits immediately on pthread_setschedparam failure.
+                // We match that behavior by returning an error.
                 error!("[{index}] failed to set scheduling params: {e}");
+                return Err(e);
             }
         }
     }
@@ -454,6 +474,8 @@ fn apply_initial_scheduling(index: ThreadIndex, tdata: &mut ThreadData, _state: 
             );
         }
     }
+
+    Ok(())
 }
 
 /// Reset the calling thread to SCHED_OTHER with priority 0.
@@ -621,6 +643,7 @@ mod tests {
     fn engine_state_construction() {
         let state = EngineState {
             continue_running: AtomicBool::new(true),
+            thread_failed: AtomicBool::new(false),
             running_threads: AtomicI32::new(0),
             ns_per_loop: NsPerLoop(100),
             resources: Vec::new(),

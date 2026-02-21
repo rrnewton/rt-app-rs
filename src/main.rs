@@ -147,6 +147,12 @@ fn run(cli: &Cli) -> Result<(), AppError> {
     shutdown(&state, &mut handles);
     info!("all threads joined, exiting");
 
+    // Check if any thread failed (e.g., scheduling error).
+    // Return error to exit with non-zero code (matching C behavior).
+    if state.thread_failed.load(Ordering::Relaxed) {
+        return Err(AppError::Io(std::io::Error::other("thread failed")));
+    }
+
     Ok(())
 }
 
@@ -197,6 +203,7 @@ fn build_engine_state(
 
     Ok(EngineState {
         continue_running: AtomicBool::new(true),
+        thread_failed: AtomicBool::new(false),
         running_threads: AtomicI32::new(0),
         ns_per_loop,
         resources,

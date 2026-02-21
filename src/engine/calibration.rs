@@ -54,17 +54,21 @@ fn ldexp(x: f64, n: f64) -> f64 {
 /// Corresponds to `waste_cpu_cycles()` in the C original.
 #[inline(never)]
 pub fn waste_cpu_cycles(load_loops: u64) {
-    let param: f64 = 0.95;
-    let n: f64 = 4.0;
+    // Use black_box on inputs to prevent constant folding.
+    // The compiler cannot know the values at compile time.
+    let mut param: f64 = std::hint::black_box(0.95);
+    let n: f64 = std::hint::black_box(4.0);
     for _ in 0..load_loops {
         // Four rounds of nested ldexp, matching the C original.
-        // `std::hint::black_box` prevents the compiler from eliminating
-        // the dead computation.
-        std::hint::black_box(ldexp(param, ldexp(param, ldexp(param, n))));
-        std::hint::black_box(ldexp(param, ldexp(param, ldexp(param, n))));
-        std::hint::black_box(ldexp(param, ldexp(param, ldexp(param, n))));
-        std::hint::black_box(ldexp(param, ldexp(param, ldexp(param, n))));
+        // Feed the result back into param to create a data dependency
+        // that prevents the compiler from eliminating iterations.
+        param = ldexp(param, ldexp(param, ldexp(param, n)));
+        param = ldexp(param, ldexp(param, ldexp(param, n)));
+        param = ldexp(param, ldexp(param, ldexp(param, n)));
+        param = ldexp(param, ldexp(param, ldexp(param, n)));
     }
+    // Ensure the final result is "used" so the loop can't be eliminated.
+    std::hint::black_box(param);
 }
 
 // ---------------------------------------------------------------------------
