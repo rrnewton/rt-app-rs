@@ -83,12 +83,12 @@ pub struct RtAppConfig {
 // Strip C-style comments from JSON
 // ---------------------------------------------------------------------------
 
-/// Strip C-style block comments (`/* ... */`) from JSON text.
+/// Strip C-style comments from JSON text.
 ///
 /// rt-app's JSON files use C-style comments which are not valid JSON.
 /// We strip them before parsing. This handles:
-/// - Single-line block comments: `/* comment */`
-/// - Multi-line block comments
+/// - Block comments: `/* comment */` (single-line and multi-line)
+/// - Line comments: `// comment` (everything from `//` to end of line)
 /// - Comments inside strings are NOT stripped (we track string state)
 fn strip_comments(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
@@ -138,6 +138,12 @@ fn strip_comments(input: &str) -> String {
                     result.push(' ');
                     continue;
                 }
+                if next_ch == '/' {
+                    // Start of line comment — skip until end of line
+                    chars.next(); // consume second '/'
+                    skip_line_comment(&mut chars);
+                    continue;
+                }
                 // Not a comment, push the '/' and continue
                 result.push('/');
                 // Don't consume next_ch, let the loop handle it
@@ -162,6 +168,16 @@ fn skip_block_comment(chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>
                 return;
             }
         }
+    }
+}
+
+fn skip_line_comment(chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>) {
+    while let Some(&(_, ch)) = chars.peek() {
+        if ch == '\n' {
+            // Preserve the newline so line-based structure is maintained
+            return;
+        }
+        chars.next();
     }
 }
 
@@ -455,6 +471,41 @@ mod tests {
         let input = r#"{"key": "value /* not a comment */"}"#;
         let output = strip_comments(input);
         assert!(output.contains("/* not a comment */"));
+    }
+
+    #[test]
+    fn strip_line_comments() {
+        let input = "{\n  // this is a comment\n  \"key\": 1\n}";
+        let output = strip_comments(input);
+        assert!(output.contains("\"key\""));
+        assert!(!output.contains("this is a comment"));
+        // Newline preserved
+        assert!(output.contains('\n'));
+    }
+
+    #[test]
+    fn strip_line_comments_end_of_line() {
+        let input = "{\n  \"key\": 1 // trailing comment\n}";
+        let output = strip_comments(input);
+        assert!(output.contains("\"key\": 1"));
+        assert!(!output.contains("trailing comment"));
+    }
+
+    #[test]
+    fn strip_line_comments_preserves_strings() {
+        let input = r#"{"key": "value // not a comment"}"#;
+        let output = strip_comments(input);
+        assert!(output.contains("// not a comment"));
+    }
+
+    #[test]
+    fn strip_mixed_comments() {
+        let input = "{\n  /* block */ \"a\": 1, // line\n  \"b\": 2\n}";
+        let output = strip_comments(input);
+        assert!(!output.contains("block"));
+        assert!(!output.contains("line"));
+        assert!(output.contains("\"a\""));
+        assert!(output.contains("\"b\""));
     }
 
     #[test]

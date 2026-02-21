@@ -14,9 +14,23 @@ rt-app-rs has a built-in JSON preprocessor that automatically handles several
 relaxed-JSON conveniences, so no separate preprocessing step or external tool
 is needed. The preprocessor provides the following features:
 
-1. **C-style block comments** (`/* ... */`) -- You can annotate your
-   configuration files with block comments anywhere in the JSON. They are
-   stripped before parsing.
+1. **C-style comments** -- You can annotate your configuration files with
+   comments anywhere in the JSON. Both block comments (`/* ... */`) and
+   line comments (`// ...`) are supported. Block comments can span multiple
+   lines; line comments run from `//` to the end of the line. Comments
+   inside quoted strings are left intact.
+
+   ```json
+   {
+     /* This is a block comment */
+     "duration": 5, // This is a line comment
+     /*
+      * Multi-line block comments
+      * are also supported.
+      */
+     "calibration": "CPU0"
+   }
+   ```
 
 2. **Trailing commas** before `}` or `]` -- A trailing comma after the last
    element of an object or array is silently removed, so you do not need to
