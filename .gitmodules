@@ -1,0 +1,3 @@
+[submodule "rt-app-orig"]
+	path = rt-app-orig
+	url = https://github.com/scheduler-tools/rt-app
