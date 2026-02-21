@@ -11,7 +11,7 @@ use std::time::Duration;
 use log::debug;
 use nix::time::{clock_gettime, ClockId};
 
-use crate::engine::calibration::{loadwait, NsPerLoop};
+use crate::engine::calibration::{loadwait, spin_wait_ns, CpuBurnMode};
 use crate::types::{EventData, LogData, PhaseData, ResourceType, ThreadIndex};
 use crate::utils::timespec_to_nsec;
 
@@ -126,8 +126,8 @@ pub struct TimerState {
 pub struct EventContext<'a> {
     /// The calling thread's index.
     pub thread_index: ThreadIndex,
-    /// Calibrated ns-per-loop for CPU burn.
-    pub ns_per_loop: NsPerLoop,
+    /// How run/runtime events burn CPU time.
+    pub cpu_burn_mode: CpuBurnMode,
     /// Global resource table.
     pub resources: &'a [ResourceHandle],
     /// Per-thread local resource table (for timer_unique).
@@ -265,7 +265,15 @@ fn run_event_run(duration_usec: u64, ldata: &mut LogData, perf: &mut u64, ctx: &
     ldata.cumulative_duration_usec += duration_usec;
 
     let start = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
-    *perf += loadwait(duration_usec, ctx.ns_per_loop);
+    match ctx.cpu_burn_mode {
+        CpuBurnMode::Calibrated(ns_per_loop) => {
+            *perf += loadwait(duration_usec, ns_per_loop);
+        }
+        CpuBurnMode::Precise => {
+            spin_wait_ns(duration_usec * 1_000);
+            // perf is 0 in precise mode (no calibrated work done).
+        }
+    }
     let end = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
 
     let elapsed_ns = timespec_to_nsec(&end).wrapping_sub(timespec_to_nsec(&start));
@@ -282,13 +290,22 @@ fn run_event_runtime(
     ldata.cumulative_duration_usec += duration_usec;
 
     let start = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
-    loop {
-        *perf += loadwait(32, ctx.ns_per_loop);
-        let end = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
-        let diff_ns = timespec_to_nsec(&end).wrapping_sub(timespec_to_nsec(&start));
-        if diff_ns / 1_000 >= duration_usec {
+    match ctx.cpu_burn_mode {
+        CpuBurnMode::Calibrated(ns_per_loop) => loop {
+            *perf += loadwait(32, ns_per_loop);
+            let end = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+            let diff_ns = timespec_to_nsec(&end).wrapping_sub(timespec_to_nsec(&start));
+            if diff_ns / 1_000 >= duration_usec {
+                ldata.duration_usec += diff_ns / 1_000;
+                break;
+            }
+        },
+        CpuBurnMode::Precise => {
+            spin_wait_ns(duration_usec * 1_000);
+            let end = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+            let diff_ns = timespec_to_nsec(&end).wrapping_sub(timespec_to_nsec(&start));
             ldata.duration_usec += diff_ns / 1_000;
-            break;
+            // perf is 0 in precise mode (no calibrated work done).
         }
     }
 }
@@ -474,6 +491,7 @@ pub fn run_phase(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::calibration::NsPerLoop;
 
     #[test]
     fn lock_delta_values() {
@@ -563,7 +581,7 @@ mod tests {
         let mut perf = 0u64;
         let ctx = EventContext {
             thread_index: ThreadIndex(0),
-            ns_per_loop: NsPerLoop(100),
+            cpu_burn_mode: CpuBurnMode::Calibrated(NsPerLoop(100)),
             resources: &[],
             local_resources: &[],
             cumulative_slack: false,
@@ -589,7 +607,7 @@ mod tests {
         let mut perf = 0u64;
         let ctx = EventContext {
             thread_index: ThreadIndex(0),
-            ns_per_loop: NsPerLoop(100),
+            cpu_burn_mode: CpuBurnMode::Calibrated(NsPerLoop(100)),
             resources: &[],
             local_resources: &[],
             cumulative_slack: false,
@@ -615,7 +633,7 @@ mod tests {
         let mut perf = 0u64;
         let ctx = EventContext {
             thread_index: ThreadIndex(0),
-            ns_per_loop: NsPerLoop(100),
+            cpu_burn_mode: CpuBurnMode::Calibrated(NsPerLoop(100)),
             resources: &[],
             local_resources: &[],
             cumulative_slack: false,
@@ -644,7 +662,7 @@ mod tests {
         let mut perf = 0u64;
         let ctx = EventContext {
             thread_index: ThreadIndex(0),
-            ns_per_loop: NsPerLoop(100),
+            cpu_burn_mode: CpuBurnMode::Calibrated(NsPerLoop(100)),
             resources: &[],
             local_resources: &[],
             cumulative_slack: false,
@@ -689,7 +707,7 @@ mod tests {
         let mut ldata = LogData::default();
         let ctx = EventContext {
             thread_index: ThreadIndex(0),
-            ns_per_loop: NsPerLoop(100),
+            cpu_burn_mode: CpuBurnMode::Calibrated(NsPerLoop(100)),
             resources: &[],
             local_resources: &[],
             cumulative_slack: false,
@@ -724,5 +742,63 @@ mod tests {
             reference: "task1".into(),
             fork_count: Mutex::new(0),
         };
+    }
+
+    #[test]
+    fn event_dispatch_run_precise_mode() {
+        let event = EventData {
+            name: "test_run_precise".into(),
+            event_type: ResourceType::Run,
+            resource: None,
+            dependency: None,
+            duration: Duration::from_micros(100),
+            count: 0,
+        };
+
+        let mut ldata = LogData::default();
+        let mut perf = 0u64;
+        let ctx = EventContext {
+            thread_index: ThreadIndex(0),
+            cpu_burn_mode: CpuBurnMode::Precise,
+            resources: &[],
+            local_resources: &[],
+            cumulative_slack: false,
+            t_first_ns: 0,
+        };
+
+        run_event(&event, false, &mut ldata, &mut perf, &ctx);
+        // perf is 0 in precise mode.
+        assert_eq!(perf, 0);
+        assert_eq!(ldata.cumulative_duration_usec, 100);
+        assert!(ldata.duration_usec > 0);
+    }
+
+    #[test]
+    fn event_dispatch_runtime_precise_mode() {
+        let event = EventData {
+            name: "test_runtime_precise".into(),
+            event_type: ResourceType::Runtime,
+            resource: None,
+            dependency: None,
+            duration: Duration::from_micros(100),
+            count: 0,
+        };
+
+        let mut ldata = LogData::default();
+        let mut perf = 0u64;
+        let ctx = EventContext {
+            thread_index: ThreadIndex(0),
+            cpu_burn_mode: CpuBurnMode::Precise,
+            resources: &[],
+            local_resources: &[],
+            cumulative_slack: false,
+            t_first_ns: 0,
+        };
+
+        run_event(&event, false, &mut ldata, &mut perf, &ctx);
+        // perf is 0 in precise mode.
+        assert_eq!(perf, 0);
+        assert_eq!(ldata.cumulative_duration_usec, 100);
+        assert!(ldata.duration_usec > 0);
     }
 }

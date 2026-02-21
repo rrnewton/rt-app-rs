@@ -7,7 +7,7 @@
 
 	"global" : {
 		"duration" : 6,            // [s] (-1 = run until threads exit)
-		"calibration" : "CPU0",    // "CPUn" string, or integer [ns/loop] to skip calibration
+		"calibration" : "CPU0",    // "CPUn" string, integer [ns/loop], or "precise" (spin on clock)
 		"default_policy" : "SCHED_OTHER",  // SCHED_OTHER|SCHED_IDLE|SCHED_RR|SCHED_FIFO|SCHED_DEADLINE
 		"pi_enabled" : false,      // priority inheritance for mutexes
 		"lock_pages" : false,      // mlockall (only useful for RT policies)

@@ -27,7 +27,7 @@ use crate::types::{
 };
 use crate::utils::timespec_to_nsec;
 
-use self::calibration::NsPerLoop;
+use self::calibration::CpuBurnMode;
 use self::events::{EventContext, ResourceHandle};
 use self::timing::{ThreadPlotInfo, TimingBuffer};
 
@@ -51,8 +51,8 @@ pub struct EngineState {
     pub thread_failed: AtomicBool,
     /// Number of threads currently running (including forked ones).
     pub running_threads: AtomicI32,
-    /// Calibrated ns-per-loop value.
-    pub ns_per_loop: NsPerLoop,
+    /// How run/runtime events burn CPU time.
+    pub cpu_burn_mode: CpuBurnMode,
     /// Global resource table.
     pub resources: Vec<ResourceHandle>,
     /// Application-wide options.
@@ -234,7 +234,7 @@ fn run_phase_loop(
 
         let ctx = EventContext {
             thread_index: index,
-            ns_per_loop: state.ns_per_loop,
+            cpu_burn_mode: state.cpu_burn_mode,
             resources: &state.resources,
             local_resources,
             cumulative_slack: state.opts.cumulative_slack,
@@ -641,11 +641,13 @@ mod tests {
 
     #[test]
     fn engine_state_construction() {
+        use crate::engine::calibration::NsPerLoop;
+
         let state = EngineState {
             continue_running: AtomicBool::new(true),
             thread_failed: AtomicBool::new(false),
             running_threads: AtomicI32::new(0),
-            ns_per_loop: NsPerLoop(100),
+            cpu_burn_mode: CpuBurnMode::Calibrated(NsPerLoop(100)),
             resources: Vec::new(),
             opts: AppOptions {
                 lock_pages: false,
@@ -657,6 +659,7 @@ mod tests {
                 gnuplot: false,
                 calib_cpu: 0,
                 calib_ns_per_loop: None,
+                precise_mode: false,
                 pi_enabled: false,
                 die_on_dmiss: false,
                 mem_buffer_size: None,

@@ -32,6 +32,44 @@ impl NsPerLoop {
 }
 
 // ---------------------------------------------------------------------------
+// CpuBurnMode — how the engine burns CPU time
+// ---------------------------------------------------------------------------
+
+/// How the engine executes `run` and `runtime` events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CpuBurnMode {
+    /// Use the calibrated busy-loop: convert requested duration to a loop
+    /// count via `NsPerLoop`, then call `waste_cpu_cycles`.
+    Calibrated(NsPerLoop),
+    /// Spin on `clock_gettime(CLOCK_MONOTONIC)` for exact wall-clock
+    /// duration. No calibration phase needed.
+    Precise,
+}
+
+// ---------------------------------------------------------------------------
+// spin_wait_ns — precise wall-clock spin
+// ---------------------------------------------------------------------------
+
+/// Spin on `clock_gettime(CLOCK_MONOTONIC)` until `duration_ns` nanoseconds
+/// have elapsed. Uses `std::hint::spin_loop()` (emits PAUSE on x86) to be
+/// friendly to hyper-threading siblings.
+pub fn spin_wait_ns(duration_ns: u64) {
+    if duration_ns == 0 {
+        return;
+    }
+    let start = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+    let start_ns = timespec_to_nsec(&start);
+    let target_ns = start_ns + duration_ns;
+    loop {
+        std::hint::spin_loop();
+        let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+        if timespec_to_nsec(&now) >= target_ns {
+            break;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ldexp — pure Rust equivalent of C's ldexp(x, n)
 // ---------------------------------------------------------------------------
 
@@ -275,5 +313,41 @@ mod tests {
     fn loadwait_large_duration_splits() {
         let perf = loadwait(2_500_000, NsPerLoop(10));
         assert_eq!(perf, 250_000);
+    }
+
+    #[test]
+    fn spin_wait_ns_zero_is_noop() {
+        // Should return immediately without blocking.
+        spin_wait_ns(0);
+    }
+
+    #[test]
+    fn spin_wait_ns_short_duration() {
+        let before = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+        spin_wait_ns(1_000_000); // 1 ms
+        let after = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+        let elapsed_ns = timespec_to_nsec(&after).wrapping_sub(timespec_to_nsec(&before));
+        // Should have waited at least 1 ms.
+        assert!(
+            elapsed_ns >= 1_000_000,
+            "expected >= 1ms, got {elapsed_ns} ns"
+        );
+        // Should not have waited much more than 5 ms (generous tolerance
+        // for CI / loaded machines).
+        assert!(
+            elapsed_ns < 50_000_000,
+            "spin_wait_ns took unexpectedly long: {elapsed_ns} ns"
+        );
+    }
+
+    #[test]
+    fn cpu_burn_mode_variants() {
+        let calibrated = CpuBurnMode::Calibrated(NsPerLoop(100));
+        let precise = CpuBurnMode::Precise;
+        assert_ne!(calibrated, precise);
+        assert_eq!(
+            CpuBurnMode::Calibrated(NsPerLoop(100)),
+            CpuBurnMode::Calibrated(NsPerLoop(100))
+        );
     }
 }

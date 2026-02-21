@@ -840,6 +840,16 @@ fn cross_module_ftrace_levels_from_config() {
 }
 
 #[test]
+fn cross_module_calibration_precise() {
+    use rt_app_rs::config::global::Calibration;
+
+    let json =
+        r#"{"global": {"calibration": "precise"}, "tasks": {"t1": {"run": 1000, "sleep": 1000}}}"#;
+    let config = parse_config_str(json).unwrap();
+    assert_eq!(config.global.calibration, Calibration::Precise);
+}
+
+#[test]
 fn cross_module_calibration_variants() {
     use rt_app_rs::config::global::Calibration;
 

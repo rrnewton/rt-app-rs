@@ -547,6 +547,9 @@ pub struct AppOptions {
     /// Calibrated nanoseconds per busy-loop iteration.
     #[serde(default)]
     pub calib_ns_per_loop: Option<u64>,
+    /// Whether precise calibration mode is active (spin on clock_gettime).
+    #[serde(default)]
+    pub precise_mode: bool,
     /// Whether priority inheritance is enabled for mutexes.
     #[serde(default)]
     pub pi_enabled: bool,
