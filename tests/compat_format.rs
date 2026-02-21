@@ -29,6 +29,11 @@ const LOCAL_EXAMPLES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/doc/examples"
 /// separately to verify they produce an appropriate error.
 const WORKGEN_ONLY_CONFIGS: &[&str] = &["video-long.json", "video-short.json"];
 
+/// Configs that contain comments and are meant for human documentation, not
+/// machine parsing. These use JSON-with-comments (JSONC) format like the
+/// original C rt-app's template.
+const DOCUMENTATION_CONFIGS: &[&str] = &["template.json"];
+
 /// Create a [`TimingPoint`] matching representative C output values.
 fn sample_timing_point() -> TimingPoint {
     TimingPoint {
@@ -92,6 +97,12 @@ fn is_workgen_only(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|name| WORKGEN_ONLY_CONFIGS.contains(&name))
+}
+
+fn is_documentation_config(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| DOCUMENTATION_CONFIGS.contains(&name))
 }
 
 /// Load and parse a JSON config.
@@ -541,6 +552,7 @@ mod config_parsing {
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|e| e == "json"))
             .filter(|p| !is_workgen_only(p))
+            .filter(|p| !is_documentation_config(p))
             .collect();
         configs.sort();
         assert!(!configs.is_empty(), "no standard top-level configs found");
