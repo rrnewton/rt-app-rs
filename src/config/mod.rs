@@ -19,6 +19,7 @@ pub mod global;
 pub mod resources;
 pub mod tasks;
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
@@ -223,9 +224,154 @@ fn strip_trailing_commas(input: &str) -> String {
     result
 }
 
-/// Pre-process JSON text: strip comments and trailing commas.
+/// Deduplicate JSON object keys by appending incrementing numeric suffixes.
+///
+/// rt-app's `workgen` script supports duplicate keys in JSON objects (which
+/// standard JSON forbids). For example:
+///
+/// ```json
+/// {"run": 5000, "sleep": 5000, "run": 5000}
+/// ```
+///
+/// becomes:
+///
+/// ```json
+/// {"run": 5000, "sleep": 5000, "run1": 5000}
+/// ```
+///
+/// Each nesting level maintains its own set of seen keys. When a duplicate is
+/// found, a numeric suffix starting at 1 is appended, incrementing until a
+/// unique key is found. This mirrors the algorithm in the C rt-app's
+/// `doc/workgen` Python script (`check_unikid_json()`), but operates on
+/// characters rather than lines for correctness with arbitrary formatting.
+fn deduplicate_keys(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut result = String::with_capacity(len);
+    let mut pos = 0;
+
+    // Stack of seen-key sets, one per `{` nesting level.
+    // The outermost level is pushed when we encounter the first `{`.
+    let mut key_stack: Vec<HashMap<String, usize>> = Vec::new();
+
+    while pos < len {
+        let b = bytes[pos];
+
+        if b == b'"' {
+            // Start of a JSON string — extract it and check if it's an object key.
+            let (raw_str, content, end) = extract_json_string(bytes, pos);
+            // Look ahead past whitespace after the closing quote to see if ':' follows.
+            let colon_pos = skip_ascii_whitespace(bytes, end);
+            let is_key = colon_pos < len && bytes[colon_pos] == b':';
+
+            if is_key {
+                if let Some(seen) = key_stack.last_mut() {
+                    let count = seen.entry(content.clone()).or_insert(0);
+                    *count += 1;
+                    if *count > 1 {
+                        // Duplicate key — find a unique suffixed version.
+                        let new_key = find_unique_key(seen, &content);
+                        result.push('"');
+                        result.push_str(&new_key);
+                        result.push('"');
+                    } else {
+                        result.push_str(raw_str);
+                    }
+                } else {
+                    result.push_str(raw_str);
+                }
+            } else {
+                // Not a key, just a string value — emit as-is.
+                result.push_str(raw_str);
+            }
+            pos = end;
+            continue;
+        }
+
+        if b == b'{' {
+            key_stack.push(HashMap::new());
+            result.push('{');
+            pos += 1;
+            continue;
+        }
+
+        if b == b'}' {
+            key_stack.pop();
+            result.push('}');
+            pos += 1;
+            continue;
+        }
+
+        result.push(b as char);
+        pos += 1;
+    }
+
+    result
+}
+
+/// Extract a JSON string starting at `pos` (which must point to the opening `"`).
+///
+/// Returns `(raw_slice, raw_key_content, end_pos)` where `raw_key_content` is
+/// the text between the quotes (preserving escape sequences) and `end_pos` is
+/// the index just past the closing `"`.
+fn extract_json_string(bytes: &[u8], start: usize) -> (&str, String, usize) {
+    debug_assert_eq!(bytes[start], b'"');
+    let mut pos = start + 1;
+
+    while pos < bytes.len() {
+        let b = bytes[pos];
+        if b == b'\\' && pos + 1 < bytes.len() {
+            pos += 2;
+            continue;
+        }
+        if b == b'"' {
+            let end = pos + 1;
+            let raw = std::str::from_utf8(&bytes[start..end]).unwrap_or("");
+            // Content between quotes, preserving escapes for faithful reproduction.
+            let content = std::str::from_utf8(&bytes[start + 1..pos])
+                .unwrap_or("")
+                .to_owned();
+            return (raw, content, end);
+        }
+        pos += 1;
+    }
+
+    // Unterminated string — return what we have.
+    let raw = std::str::from_utf8(&bytes[start..pos]).unwrap_or("");
+    let content = std::str::from_utf8(&bytes[start + 1..pos])
+        .unwrap_or("")
+        .to_owned();
+    (raw, content, pos)
+}
+
+/// Skip ASCII whitespace starting at `pos`, returning the index of the first
+/// non-whitespace byte (or `bytes.len()` if none).
+fn skip_ascii_whitespace(bytes: &[u8], mut pos: usize) -> usize {
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    pos
+}
+
+/// Find a unique key name by appending incrementing suffixes (1, 2, 3, ...).
+///
+/// The newly chosen key is inserted into `seen` before returning so subsequent
+/// duplicates of either the original or the suffixed name are handled correctly.
+fn find_unique_key(seen: &mut HashMap<String, usize>, base: &str) -> String {
+    let mut suffix = 1u32;
+    loop {
+        let candidate = format!("{base}{suffix}");
+        if !seen.contains_key(&candidate) {
+            seen.insert(candidate.clone(), 1);
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+/// Pre-process JSON text: strip comments, trailing commas, and deduplicate keys.
 fn preprocess_json(input: &str) -> String {
-    strip_trailing_commas(&strip_comments(input))
+    deduplicate_keys(&strip_trailing_commas(&strip_comments(input)))
 }
 
 // ---------------------------------------------------------------------------
@@ -566,5 +712,137 @@ mod tests {
         assert!(!config.global.lock_pages);
         assert!(config.global.gnuplot);
         assert!(config.global.cumulative_slack);
+    }
+
+    // -----------------------------------------------------------------------
+    // Deduplicate keys tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dedup_simple_duplicate_keys() {
+        let input = r#"{"run": 5000, "sleep": 5000, "run": 3000}"#;
+        let output = deduplicate_keys(input);
+        assert_eq!(output, r#"{"run": 5000, "sleep": 5000, "run1": 3000}"#);
+    }
+
+    #[test]
+    fn dedup_triple_duplicate() {
+        let input = r#"{"run": 1, "run": 2, "run": 3}"#;
+        let output = deduplicate_keys(input);
+        assert_eq!(output, r#"{"run": 1, "run1": 2, "run2": 3}"#);
+    }
+
+    #[test]
+    fn dedup_nested_independent_levels() {
+        // Each nesting level has its own key namespace.
+        let input = r#"{"a": {"run": 1, "run": 2}, "b": {"run": 3, "run": 4}}"#;
+        let output = deduplicate_keys(input);
+        assert_eq!(
+            output,
+            r#"{"a": {"run": 1, "run1": 2}, "b": {"run": 3, "run1": 4}}"#
+        );
+    }
+
+    #[test]
+    fn dedup_no_false_positives_in_string_values() {
+        // Keys inside string values should not be modified.
+        let input = r#"{"key": "run", "run": 1}"#;
+        let output = deduplicate_keys(input);
+        assert_eq!(output, r#"{"key": "run", "run": 1}"#);
+    }
+
+    #[test]
+    fn dedup_keys_with_existing_numeric_suffix() {
+        // Keys like "run1" already present — should still deduplicate "run".
+        let input = r#"{"run": 1, "run1": 2, "run": 3}"#;
+        let output = deduplicate_keys(input);
+        // "run" seen, "run1" seen, then second "run" needs suffix: try 1 (taken), try 2.
+        assert_eq!(output, r#"{"run": 1, "run1": 2, "run2": 3}"#);
+    }
+
+    #[test]
+    fn dedup_multiple_nesting_levels() {
+        let input = r#"{
+            "tasks": {
+                "thread0": {
+                    "run": 5000,
+                    "sleep": 5000,
+                    "run": 5000,
+                    "sleep": 5000
+                }
+            }
+        }"#;
+        let output = deduplicate_keys(input);
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let thread0 = &parsed["tasks"]["thread0"];
+        assert!(thread0.get("run").is_some());
+        assert!(thread0.get("run1").is_some());
+        assert!(thread0.get("sleep").is_some());
+        assert!(thread0.get("sleep1").is_some());
+    }
+
+    #[test]
+    fn dedup_preserves_no_dup_input() {
+        let input = r#"{"a": 1, "b": 2, "c": 3}"#;
+        let output = deduplicate_keys(input);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn dedup_empty_object() {
+        let input = "{}";
+        let output = deduplicate_keys(input);
+        assert_eq!(output, "{}");
+    }
+
+    #[test]
+    fn dedup_deeply_nested() {
+        let input = r#"{"a": {"b": {"x": 1, "x": 2}}, "a": {"b": {"x": 3}}}"#;
+        let output = deduplicate_keys(input);
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        // Top level: "a" and "a1"
+        assert!(parsed.get("a").is_some());
+        assert!(parsed.get("a1").is_some());
+        // Inner objects: "x" and "x1" in the first "a"
+        let inner = &parsed["a"]["b"];
+        assert!(inner.get("x").is_some());
+        assert!(inner.get("x1").is_some());
+    }
+
+    #[test]
+    fn dedup_escaped_quotes_in_keys() {
+        // Key with escaped quote should be handled correctly.
+        let input = r#"{"k\"ey": 1, "k\"ey": 2}"#;
+        let output = deduplicate_keys(input);
+        assert!(output.contains(r#""k\"ey1""#));
+    }
+
+    #[test]
+    fn dedup_multiple_different_keys_duplicated() {
+        let input =
+            r#"{"lock": "m", "run": 100, "unlock": "m", "run": 200, "lock": "m", "unlock": "m"}"#;
+        let output = deduplicate_keys(input);
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert!(parsed.get("lock").is_some());
+        assert!(parsed.get("lock1").is_some());
+        assert!(parsed.get("run").is_some());
+        assert!(parsed.get("run1").is_some());
+        assert!(parsed.get("unlock").is_some());
+        assert!(parsed.get("unlock1").is_some());
+    }
+
+    #[test]
+    fn preprocess_deduplicates_after_comment_and_comma_strip() {
+        let input = r#"{
+            /* rt-app config */
+            "run": 5000,
+            "sleep": 5000,
+            "run": 3000,
+        }"#;
+        let output = preprocess_json(input);
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert!(parsed.get("run").is_some());
+        assert!(parsed.get("run1").is_some());
+        assert!(parsed.get("sleep").is_some());
     }
 }
