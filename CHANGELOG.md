@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Built-in workgen preprocessor** — duplicate JSON keys (e.g., repeated
+  `"run"` entries) are automatically renamed with numeric suffixes (`"run"`,
+  `"run1"`, `"run2"`), eliminating the need for the external Python `workgen`
+  script from the C original.
+- **`doc/tutorial.md`** — comprehensive markdown rewrite of the original C
+  tutorial (`doc/tutorial.txt`), with proper headings, fenced code blocks,
+  tables, and updated documentation for the built-in JSON preprocessor.
+- **Full runtime pipeline** — complete end-to-end execution: config parsing →
+  type conversion → calibration → engine state construction → signal handling →
+  thread spawning → shutdown. The binary now actually runs workloads.
+- **JSON fuzzer** (`bug_finding/`) — standalone stress-testing tool that
+  generates random valid JSON workloads and compares C rt-app vs rt-app-rs
+  behavior (exit codes, timing, output). Includes the original C rt-app as
+  a git submodule for comparison testing.
+
 ## [0.1.0] - 2026-02-20
 
 Faithful port of the original C [rt-app](https://github.com/scheduler-tools/rt-app)
