@@ -32,6 +32,7 @@ impl From<&GlobalConfig> for AppOptions {
         let (calib_cpu, calib_ns_per_loop) = match &g.calibration {
             Calibration::Cpu(cpu) => (*cpu as i32, None),
             Calibration::NsPerLoop(ns) => (-1, Some(*ns)),
+            Calibration::Precise => (-1, None),
         };
 
         let logsize = match &g.log_size {
@@ -55,6 +56,7 @@ impl From<&GlobalConfig> for AppOptions {
             mem_buffer_size: Some(g.mem_buffer_size),
             io_device: Some(g.io_device.clone()),
             cumulative_slack: g.cumulative_slack,
+            precise_mode: matches!(g.calibration, Calibration::Precise),
         }
     }
 }

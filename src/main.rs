@@ -27,7 +27,7 @@ use rt_app_rs::config::{parse_config, parse_config_stdin, ConfigError, RtAppConf
 use rt_app_rs::conversions::{
     build_resource_handles, log_capacity_from_config, task_config_to_thread_data, BarrierCounter,
 };
-use rt_app_rs::engine::calibration::{calibrate_cpu_cycles, NsPerLoop};
+use rt_app_rs::engine::calibration::{calibrate_cpu_cycles, CpuBurnMode, NsPerLoop};
 use rt_app_rs::engine::{create_thread, shutdown, EngineState, ThreadHandle};
 use rt_app_rs::types::{AppOptions, ThreadIndex};
 use rt_app_rs::utils::timespec_to_nsec;
@@ -49,6 +49,12 @@ fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let cli = Cli::parse();
+
+    // Handle --print-template early exit
+    if cli.print_template {
+        cli.print_template_and_exit();
+        return ExitCode::from(EXIT_SUCCESS);
+    }
 
     match run(&cli) {
         Ok(()) => ExitCode::from(EXIT_SUCCESS),
@@ -88,13 +94,19 @@ enum AppError {
 fn run(cli: &Cli) -> Result<(), AppError> {
     // Step 1: Parse configuration
     let config = match cli.config_source() {
-        ConfigSource::File(path) => {
+        Some(ConfigSource::File(path)) => {
             info!("loading configuration from {}", path.display());
             parse_config(Path::new(&path))?
         }
-        ConfigSource::Stdin => {
+        Some(ConfigSource::Stdin) => {
             info!("loading configuration from stdin");
             parse_config_stdin()?
+        }
+        None => {
+            return Err(AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "no configuration file specified",
+            )));
         }
     };
 
@@ -124,12 +136,18 @@ fn run(cli: &Cli) -> Result<(), AppError> {
     // Step 3: Convert config to runtime types
     let opts = AppOptions::from(&config.global);
 
-    // Step 4: Run calibration
-    let ns_per_loop = run_calibration(&config, &opts)?;
-    info!("calibration: {} ns/loop", ns_per_loop.0);
+    // Step 4: Determine CPU burn mode
+    let cpu_burn_mode = if opts.precise_mode {
+        info!("using precise mode (clock_gettime spin-wait)");
+        CpuBurnMode::Precise
+    } else {
+        let ns_per_loop = run_calibration(&config, &opts)?;
+        info!("calibration: {} ns/loop", ns_per_loop.0);
+        CpuBurnMode::Calibrated(ns_per_loop)
+    };
 
     // Step 5: Build engine state
-    let state = build_engine_state(&config, opts, ns_per_loop)?;
+    let state = build_engine_state(&config, opts, cpu_burn_mode)?;
     let state = Arc::new(state);
 
     // Step 6: Install signal handlers
@@ -212,7 +230,7 @@ fn run_calibration(_config: &RtAppConfig, opts: &AppOptions) -> Result<NsPerLoop
 fn build_engine_state(
     config: &RtAppConfig,
     opts: AppOptions,
-    ns_per_loop: NsPerLoop,
+    cpu_burn_mode: CpuBurnMode,
 ) -> Result<EngineState, AppError> {
     // Build barrier counter to determine barrier participant counts
     let barrier_counter = BarrierCounter::from_tasks(&config.tasks, &config.resources);
@@ -230,7 +248,7 @@ fn build_engine_state(
         continue_running: AtomicBool::new(true),
         thread_failed: AtomicBool::new(false),
         running_threads: AtomicI32::new(0),
-        ns_per_loop,
+        cpu_burn_mode,
         resources,
         opts,
         t_zero_ns: Mutex::new(None),
@@ -255,30 +273,6 @@ fn install_signal_handlers(state: &Arc<EngineState>) {
         signal_hook::consts::SIGHUP,
         signal_hook::consts::SIGQUIT,
     ];
-
-    for sig in signals {
-        // signal_hook::flag::register is safe and designed for AtomicBool flags
-        if let Err(e) = signal_hook::flag::register(sig, Arc::new(AtomicBool::new(false))) {
-            warn!(
-                "failed to register signal handler for signal {}: {}",
-                sig, e
-            );
-        }
-    }
-
-    // Also register the global shutdown flag
-    for sig in signals {
-        if let Err(e) = signal_hook::flag::register_conditional_shutdown(
-            sig,
-            1, // Exit code (unused since we check manually)
-            Arc::clone(&Arc::new(AtomicBool::new(false))),
-        ) {
-            debug!(
-                "conditional shutdown registration for signal {}: {:?}",
-                sig, e
-            );
-        }
-    }
 
     // Spawn a monitoring thread that checks for signals and updates engine state
     let state_clone = Arc::clone(state);
