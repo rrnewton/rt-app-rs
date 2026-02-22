@@ -178,3 +178,97 @@ When sub-agents complete their work:
 3. **Close issues**: Use `mb close prefix-XXXXX` for completed work.
 
 4. **Verify CI**: Check that the merged changes pass CI.
+
+Upstream Sync Workflow
+========================================
+
+This project maintains feature parity with upstream
+[rt-app](https://github.com/scheduler-tools/rt-app). The upstream C code is
+included as a git submodule at `rt-app-orig/` for comparison testing.
+
+When to Sync
+----------------------------------------
+
+Periodically check for new upstream commits and sync to maintain drop-in
+replacement capability. Run this workflow when:
+- Preparing a new release
+- A user reports a missing feature from upstream
+- Upstream has significant new commits
+
+Sync Procedure
+----------------------------------------
+
+1. **Update the submodule to latest upstream master:**
+   ```bash
+   cd rt-app-orig
+   git fetch origin
+   git checkout origin/master
+   cd ..
+   git add rt-app-orig
+   ```
+
+2. **Review new upstream commits:**
+   ```bash
+   cd rt-app-orig
+   git log --oneline <old-commit>..HEAD
+   ```
+   Read the commit messages and changed files to understand new features/fixes.
+
+3. **Rebuild upstream C rt-app:**
+   ```bash
+   cd bug_finding
+   ./target/release/rt-app-fuzzer --build --iterations 0
+   ```
+
+4. **Implement new features in Rust:**
+   For each new feature or fix in upstream:
+   - Read the C implementation
+   - Implement equivalent functionality in idiomatic Rust
+   - Add unit tests covering the new functionality
+   - Update `doc/tutorial.md` if user-facing
+
+5. **Update the fuzzer if needed:**
+   If upstream adds new JSON config fields or event types, update
+   `bug_finding/src/generator.rs` to generate workloads using them.
+
+6. **Run fuzz testing:**
+   ```bash
+   cd bug_finding
+   ./target/release/rt-app-fuzzer --iterations 50 --keep-failures
+   ```
+   Goal: 95%+ consistency. Investigate any divergences.
+
+7. **Update PORT_STATUS.md:**
+   Add a new entry documenting:
+   - The new upstream commit hash and date
+   - Features/fixes implemented
+   - Fuzz testing results
+   - Any new deviations or compatibility notes
+
+8. **Run full validation and commit:**
+   ```bash
+   ./validate.sh
+   git add -A
+   git commit -m "Sync with upstream rt-app <commit>"
+   ```
+
+Submodule Management
+----------------------------------------
+
+The `rt-app-orig` submodule points to the upstream rt-app repository. Key
+commands:
+
+```bash
+# Initialize submodule (first time clone)
+git submodule update --init
+
+# Update to latest upstream
+cd rt-app-orig && git fetch origin && git checkout origin/master && cd ..
+
+# Check current upstream commit
+git submodule status
+```
+
+The fuzzer (`bug_finding/`) uses this submodule to build and run the C rt-app
+for comparison testing. Always keep the submodule at a known-good commit that
+we have verified compatibility with.
