@@ -350,4 +350,31 @@ mod tests {
             CpuBurnMode::Calibrated(NsPerLoop(100))
         );
     }
+
+    #[test]
+    fn spin_wait_ns_accuracy() {
+        // Test that spin_wait_ns is accurate with minimal overshoot.
+        // Run multiple iterations to check consistency.
+        let target_ns: u64 = 10_000_000; // 10 ms
+
+        for _ in 0..5 {
+            let before = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+            spin_wait_ns(target_ns);
+            let after = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+            let elapsed_ns = timespec_to_nsec(&after).wrapping_sub(timespec_to_nsec(&before));
+
+            // Should not undershoot.
+            assert!(
+                elapsed_ns >= target_ns,
+                "spin_wait undershot: expected >= {target_ns}, got {elapsed_ns}"
+            );
+            // Should not overshoot by more than 5% (0.5ms for 10ms target).
+            // On a loaded system this might be higher, so we use 20% tolerance.
+            let max_overshoot = target_ns + target_ns / 5; // 20% tolerance
+            assert!(
+                elapsed_ns <= max_overshoot,
+                "spin_wait overshot: expected <= {max_overshoot}, got {elapsed_ns}"
+            );
+        }
+    }
 }
