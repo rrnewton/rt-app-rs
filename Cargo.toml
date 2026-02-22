@@ -1,6 +1,6 @@
 [package]
 name = "rt-app-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A pure Rust port of rt-app, the real-time workload simulator"
 license = "GPL-2.0-or-later"
