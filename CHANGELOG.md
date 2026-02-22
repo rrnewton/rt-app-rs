@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`//` line comments** in JSON config files — in addition to the existing
+  `/* ... */` block comments, line comments (`// to end of line`) are now
+  supported and stripped during preprocessing.
+- **`"calibration": "precise"` mode** — new calibration mode where `run` and
+  `runtime` events spin on `clock_gettime(CLOCK_MONOTONIC)` for exact
+  wall-clock duration instead of using calibrated busy-loop iterations.
+  Useful when you need precise timing without calibration overhead.
+- **`--print-template` CLI option** — prints a comprehensive JSON config
+  template with syntax highlighting (when output is a TTY), documenting all
+  available options and their defaults. Use `rtapp --print-template` for a
+  quick reference without consulting documentation.
+- **Expanded `doc/examples/template.json`** — now serves as a comprehensive
+  quick-reference for all config options with inline comments explaining
+  each field.
+
 ## [0.1.1] - 2026-02-21
 
 Initial release. Faithful port of the original C
