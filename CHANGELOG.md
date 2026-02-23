@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-02-22
 
 ### Added
 
@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`"calibration": "precise"` mode** — new calibration mode where `run` and
   `runtime` events spin on `clock_gettime(CLOCK_MONOTONIC)` for exact
   wall-clock duration instead of using calibrated busy-loop iterations.
-  Useful when you need precise timing without calibration overhead.
+  Testing shows 0% variance vs 5-20% variance with calibrated mode.
 - **`--print-template` CLI option** — prints a comprehensive JSON config
   template with syntax highlighting (when output is a TTY), documenting all
   available options and their defaults. Use `rtapp --print-template` for a
@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Expanded `doc/examples/template.json`** — now serves as a comprehensive
   quick-reference for all config options with inline comments explaining
   each field.
+- **`PORT_STATUS.md`** — documents port history and upstream sync status.
+- **Upstream sync workflow** in `CLAUDE.md` — instructions for syncing with
+  upstream rt-app changes.
+
+### Changed
+
+- **Fuzzer requires submodule** — `rt-app-fuzzer` now requires the C rt-app
+  to be built from the `rt-app-orig` submodule. Use `--build` flag to
+  automatically compile it.
 
 ## [0.1.1] - 2026-02-21
 
@@ -84,4 +93,5 @@ config format, same output formats, same runtime behavior.
 - thiserror for typed errors
 - signal-hook for graceful signal handling
 
+[0.2.0]: https://github.com/rrnewton/rt-app-rs/releases/tag/v0.2.0
 [0.1.1]: https://github.com/rrnewton/rt-app-rs/releases/tag/v0.1.1
