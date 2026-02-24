@@ -1,0 +1,118 @@
+name: Sync Upstream rt-app
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Nightly at 3 AM UTC
+  workflow_dispatch:      # Manual trigger
+    inputs:
+      force_sync:
+        description: 'Force sync even if no new commits'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  check-and-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for upstream changes
+        id: check
+        run: |
+          cd rt-app-orig
+          CURRENT=$(git rev-parse HEAD)
+          git fetch origin master
+          LATEST=$(git rev-parse origin/master)
+
+          echo "current_commit=$CURRENT" >> $GITHUB_OUTPUT
+          echo "latest_commit=$LATEST" >> $GITHUB_OUTPUT
+
+          if [ "$CURRENT" != "$LATEST" ] || [ "${{ inputs.force_sync }}" == "true" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "::notice::New upstream commits detected: $CURRENT..$LATEST"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "::notice::No new upstream commits"
+          fi
+
+      - name: Exit if no changes
+        if: steps.check.outputs.has_changes != 'true'
+        run: echo "No upstream changes to sync. Exiting."
+
+      - name: Setup sync branch
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          BRANCH="port-upstream-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b $BRANCH
+
+          # Update submodule to latest upstream
+          cd rt-app-orig
+          git checkout origin/master
+          cd ..
+          git add rt-app-orig
+          git commit -m "Update rt-app-orig submodule to ${{ steps.check.outputs.latest_commit }}"
+
+          echo "SYNC_BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain
+        if: steps.check.outputs.has_changes == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build dependencies
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool libjson-c-dev
+
+      - name: Run Claude to sync upstream
+        if: steps.check.outputs.has_changes == 'true'
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Execute the /sync-upstream skill.
+
+            Context:
+            - Previous upstream commit: ${{ steps.check.outputs.current_commit }}
+            - New upstream commit: ${{ steps.check.outputs.latest_commit }}
+            - Branch: ${{ env.SYNC_BRANCH }}
+
+            Follow the skill instructions completely. Build and run the fuzzer,
+            interpret results, fix any issues, and report your final status.
+          max_turns: 100
+          timeout_minutes: 60
+
+      - name: Push branch
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git push origin $SYNC_BRANCH
+
+      - name: Check Claude result and merge if successful
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          # Check if the last commit message indicates success
+          LAST_MSG=$(git log -1 --pretty=%B)
+
+          if echo "$LAST_MSG" | grep -qi "Status: SUCCESS"; then
+            echo "::notice::Sync successful, merging to main"
+            git checkout main
+            git merge $SYNC_BRANCH --no-edit
+            git push origin main
+            git push origin --delete $SYNC_BRANCH
+          else
+            echo "::warning::Sync incomplete or failed. Branch $SYNC_BRANCH preserved for review."
+            echo "See branch $SYNC_BRANCH for details and manual intervention."
+          fi
