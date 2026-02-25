@@ -34,7 +34,7 @@ impl From<ExitCode> for std::process::ExitCode {
     }
 }
 
-/// Where the JSON configuration comes from: a file path or standard input.
+/// Where the JSON/YAML configuration comes from: a file path or standard input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigSource {
     /// Read configuration from the given file path.
@@ -82,7 +82,7 @@ const TEMPLATE_JSON: &str = include_str!("../doc/examples/template.json");
 
 /// rt-app-rs: a real-time workload simulator.
 ///
-/// Reads a JSON task-set description and generates the corresponding
+/// Reads a JSON or YAML task-set description and generates the corresponding
 /// real-time workload. The config can be read from a file or from stdin
 /// (by passing "-" as the config path).
 #[derive(Parser, Debug)]
@@ -101,7 +101,7 @@ pub struct Cli {
     #[arg(long = "print-template")]
     pub print_template: bool,
 
-    /// Path to a JSON task-set description file, or "-" to read from stdin.
+    /// Path to a JSON or YAML task-set description file, or "-" to read from stdin.
     #[arg(value_name = "CONFIG", required_unless_present = "print_template")]
     config: Option<String>,
 }

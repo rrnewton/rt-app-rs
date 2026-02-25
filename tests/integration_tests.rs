@@ -1,11 +1,11 @@
 //! Comprehensive integration tests for rt-app-rs.
 //!
 //! These tests exercise the public API across module boundaries, parsing all
-//! example JSON configurations and verifying edge cases.
+//! example JSON and YAML configurations and verifying edge cases.
 
 use std::path::{Path, PathBuf};
 
-use rt_app_rs::config::{parse_config, parse_config_str, ResourceTable};
+use rt_app_rs::config::{parse_config, parse_config_str, parse_yaml_str, ResourceTable};
 use rt_app_rs::types::{FtraceLevel, ResourceType, SchedulingPolicy};
 
 // ---------------------------------------------------------------------------
@@ -1107,5 +1107,171 @@ fn all_failure_fixture_files_exist() {
     for name in &failure_files {
         let path = failure_fixture(name);
         assert!(path.exists(), "missing failure fixture: {name}");
+    }
+}
+
+// ===========================================================================
+// E) YAML integration tests
+// ===========================================================================
+
+#[test]
+fn parse_yaml_example1_via_file() {
+    let config = parse_fixture(&tutorial_fixture("example1.yaml"));
+    assert_eq!(config.tasks.len(), 1);
+    assert_eq!(config.tasks[0].name, "thread0");
+    assert_eq!(config.tasks[0].phases.len(), 1);
+    assert_eq!(config.tasks[0].phases[0].loop_count, -1);
+    assert_eq!(config.tasks[0].phases[0].events.len(), 2); // run + sleep
+    assert_eq!(config.global.duration_secs, 2);
+    assert!(config.global.gnuplot);
+    assert!(!config.global.pi_enabled);
+    assert!(!config.global.lock_pages);
+    assert_eq!(
+        config.global.ftrace.0,
+        FtraceLevel::MAIN | FtraceLevel::TASK | FtraceLevel::LOOP | FtraceLevel::EVENT
+    );
+}
+
+#[test]
+fn parse_yaml_example4_via_file() {
+    let config = parse_fixture(&tutorial_fixture("example4.yaml"));
+    assert_eq!(config.tasks.len(), 2);
+    for task in &config.tasks {
+        assert_eq!(task.phases[0].events.len(), 3);
+    }
+    let t0_events = &config.tasks[0].phases[0].events;
+    let has_resume = t0_events
+        .iter()
+        .any(|e| e.event_type == ResourceType::Resume);
+    let has_suspend = t0_events
+        .iter()
+        .any(|e| e.event_type == ResourceType::Suspend);
+    assert!(has_resume, "expected resume event in thread0");
+    assert!(has_suspend, "expected suspend event in thread0");
+}
+
+#[test]
+fn yaml_and_json_example1_produce_identical_config() {
+    let json_config = parse_fixture(&tutorial_fixture("example1.json"));
+    let yaml_config = parse_fixture(&tutorial_fixture("example1.yaml"));
+
+    assert_eq!(json_config.tasks.len(), yaml_config.tasks.len());
+    assert_eq!(json_config.tasks[0].name, yaml_config.tasks[0].name);
+    assert_eq!(
+        json_config.tasks[0].phases.len(),
+        yaml_config.tasks[0].phases.len()
+    );
+    assert_eq!(
+        json_config.tasks[0].phases[0].events.len(),
+        yaml_config.tasks[0].phases[0].events.len()
+    );
+    assert_eq!(
+        json_config.tasks[0].phases[0].loop_count,
+        yaml_config.tasks[0].phases[0].loop_count
+    );
+    assert_eq!(
+        json_config.global.duration_secs,
+        yaml_config.global.duration_secs
+    );
+    assert_eq!(json_config.global.gnuplot, yaml_config.global.gnuplot);
+    assert_eq!(json_config.global.pi_enabled, yaml_config.global.pi_enabled);
+    assert_eq!(json_config.global.lock_pages, yaml_config.global.lock_pages);
+    assert_eq!(json_config.global.ftrace, yaml_config.global.ftrace);
+    assert_eq!(
+        json_config.global.log_basename,
+        yaml_config.global.log_basename
+    );
+    assert_eq!(json_config.global.logdir, yaml_config.global.logdir);
+    assert_eq!(
+        json_config.global.default_policy,
+        yaml_config.global.default_policy
+    );
+}
+
+#[test]
+fn yaml_and_json_example4_produce_identical_config() {
+    let json_config = parse_fixture(&tutorial_fixture("example4.json"));
+    let yaml_config = parse_fixture(&tutorial_fixture("example4.yaml"));
+
+    assert_eq!(json_config.tasks.len(), yaml_config.tasks.len());
+    for (jt, yt) in json_config.tasks.iter().zip(yaml_config.tasks.iter()) {
+        assert_eq!(jt.name, yt.name);
+        assert_eq!(jt.phases.len(), yt.phases.len());
+        for (jp, yp) in jt.phases.iter().zip(yt.phases.iter()) {
+            assert_eq!(jp.events.len(), yp.events.len());
+            assert_eq!(jp.loop_count, yp.loop_count);
+            for (je, ye) in jp.events.iter().zip(yp.events.iter()) {
+                assert_eq!(je.event_type, ye.event_type);
+                assert_eq!(je.duration_usec, ye.duration_usec);
+            }
+        }
+    }
+}
+
+#[test]
+fn yaml_inline_config_parsing() {
+    let yaml = "
+tasks:
+  worker:
+    instance: 2
+    cpus: [0, 1]
+    run: 5000
+    sleep: 2000
+global:
+  duration: 10
+  default_policy: SCHED_OTHER
+";
+    let config = parse_yaml_str(yaml).unwrap();
+    assert_eq!(config.tasks.len(), 1);
+    assert_eq!(config.tasks[0].name, "worker");
+    assert_eq!(config.tasks[0].num_instances, 2);
+    assert_eq!(config.tasks[0].cpus, vec![0, 1]);
+    assert_eq!(config.global.duration_secs, 10);
+}
+
+#[test]
+fn yaml_with_resources() {
+    let yaml = "
+resources:
+  mutex1:
+    type: mutex
+  barrier1:
+    type: barrier
+tasks:
+  t1:
+    lock: mutex1
+    run: 1000
+    unlock: mutex1
+";
+    let config = parse_yaml_str(yaml).unwrap();
+    assert!(config.resources.len() >= 2);
+    let has_mutex = config
+        .resources
+        .iter()
+        .any(|r| r.name == "mutex1" && r.resource_type == ResourceType::Mutex);
+    assert!(has_mutex);
+    let has_barrier = config
+        .resources
+        .iter()
+        .any(|r| r.name == "barrier1" && r.resource_type == ResourceType::Barrier);
+    assert!(has_barrier);
+}
+
+#[test]
+fn yaml_missing_tasks_error() {
+    let yaml = "
+global:
+  duration: 5
+";
+    let result = parse_yaml_str(yaml);
+    assert!(result.is_err());
+}
+
+#[test]
+fn yaml_fixture_files_exist() {
+    let yaml_files = vec!["example1.yaml", "example4.yaml"];
+    for name in &yaml_files {
+        let path = tutorial_fixture(name);
+        assert!(path.exists(), "missing YAML fixture: {name}");
     }
 }

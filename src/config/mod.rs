@@ -1,10 +1,16 @@
-//! JSON configuration parser for rt-app-rs.
+//! Configuration parser for rt-app-rs (JSON and YAML).
 //!
 //! Ported from `rt-app_parse_config.c` (1385 lines of manual json-c walking)
 //! into idiomatic Rust using serde_json with derive-based deserialization and
 //! custom deserializers for irregular JSON formats.
 //!
-//! The JSON configuration has three top-level keys:
+//! The tool transparently accepts `.json` or `.yml`/`.yaml` config files.
+//! JSON files undergo preprocessing (strip C-style comments, trailing commas,
+//! deduplicate keys) before parsing. YAML files are parsed directly via
+//! `serde_yaml` and converted to `serde_json::Value` for the shared downstream
+//! pipeline.
+//!
+//! The configuration has three top-level keys:
 //! - `"global"` (optional) — application-wide settings
 //! - `"resources"` (optional) — explicit resource declarations
 //! - `"tasks"` (required) — thread definitions with events and phases
@@ -41,6 +47,9 @@ pub enum ConfigError {
 
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("YAML parse error: {0}")]
+    Yaml(#[from] serde_yaml::Error),
 
     #[error("invalid scheduling policy: {0:?}")]
     InvalidPolicy(String),
@@ -391,27 +400,141 @@ fn preprocess_json(input: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Config format detection
+// ---------------------------------------------------------------------------
+
+/// The format of a configuration file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigFormat {
+    /// JSON with C-style comments, trailing commas, and duplicate keys.
+    Json,
+    /// Standard YAML.
+    Yaml,
+}
+
+impl ConfigFormat {
+    /// Detect the config format from a file extension.
+    ///
+    /// Returns `None` for unrecognized extensions (the caller should use
+    /// auto-detection in that case).
+    pub fn from_extension(path: &Path) -> Option<Self> {
+        match path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("json") => Some(Self::Json),
+            Some("yaml" | "yml") => Some(Self::Yaml),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// YAML-to-JSON value conversion
+// ---------------------------------------------------------------------------
+
+/// Convert a `serde_yaml::Value` into a `serde_json::Value`.
+///
+/// This bridges YAML parsing into the shared `serde_json::Value` pipeline used
+/// by all downstream config processing. The conversion is straightforward:
+/// YAML mappings become JSON objects, sequences become arrays, and scalars map
+/// to their JSON equivalents.
+fn yaml_value_to_json(yaml: serde_yaml::Value) -> serde_json::Value {
+    match yaml {
+        serde_yaml::Value::Null => serde_json::Value::Null,
+        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(b),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::Value::Number(i.into())
+            } else if let Some(u) = n.as_u64() {
+                serde_json::Value::Number(u.into())
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Number::from_f64(f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        serde_yaml::Value::String(s) => serde_json::Value::String(s),
+        serde_yaml::Value::Sequence(seq) => {
+            serde_json::Value::Array(seq.into_iter().map(yaml_value_to_json).collect())
+        }
+        serde_yaml::Value::Mapping(map) => {
+            let obj = map
+                .into_iter()
+                .filter_map(|(k, v)| {
+                    let key = match k {
+                        serde_yaml::Value::String(s) => s,
+                        serde_yaml::Value::Number(n) => n.to_string(),
+                        serde_yaml::Value::Bool(b) => b.to_string(),
+                        _ => return None,
+                    };
+                    Some((key, yaml_value_to_json(v)))
+                })
+                .collect();
+            serde_json::Value::Object(obj)
+        }
+        // Tagged values: unwrap the tag and convert the inner value.
+        serde_yaml::Value::Tagged(tagged) => yaml_value_to_json(tagged.value),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Parsing entry points
 // ---------------------------------------------------------------------------
 
-/// Parse a JSON configuration from a string.
+/// Parse a JSON configuration from a string (with C-style preprocessing).
 pub fn parse_config_str(input: &str) -> Result<RtAppConfig, ConfigError> {
     let clean = preprocess_json(input);
     let root: serde_json::Value = serde_json::from_str(&clean)?;
     parse_from_value(&root)
 }
 
-/// Parse a JSON configuration from a file path.
-pub fn parse_config(path: &Path) -> Result<RtAppConfig, ConfigError> {
-    let content = std::fs::read_to_string(path)?;
-    parse_config_str(&content)
+/// Parse a YAML configuration from a string.
+pub fn parse_yaml_str(input: &str) -> Result<RtAppConfig, ConfigError> {
+    let yaml_val: serde_yaml::Value = serde_yaml::from_str(input)?;
+    let json_val = yaml_value_to_json(yaml_val);
+    parse_from_value(&json_val)
 }
 
-/// Parse a JSON configuration from stdin.
+/// Parse a configuration string, dispatching by explicit format.
+fn parse_str_as(input: &str, format: ConfigFormat) -> Result<RtAppConfig, ConfigError> {
+    match format {
+        ConfigFormat::Json => parse_config_str(input),
+        ConfigFormat::Yaml => parse_yaml_str(input),
+    }
+}
+
+/// Auto-detect format: try JSON (with preprocessing) first, fall back to YAML.
+///
+/// Used for stdin or files with unrecognized extensions.
+fn parse_str_autodetect(input: &str) -> Result<RtAppConfig, ConfigError> {
+    parse_config_str(input).or_else(|_json_err| parse_yaml_str(input))
+}
+
+/// Parse a configuration from a file path.
+///
+/// The format is detected from the file extension (`.json`, `.yml`, `.yaml`).
+/// For unrecognized extensions, auto-detection is used (JSON first, then YAML).
+pub fn parse_config(path: &Path) -> Result<RtAppConfig, ConfigError> {
+    let content = std::fs::read_to_string(path)?;
+    match ConfigFormat::from_extension(path) {
+        Some(fmt) => parse_str_as(&content, fmt),
+        None => parse_str_autodetect(&content),
+    }
+}
+
+/// Parse a configuration from stdin.
+///
+/// Since stdin has no file extension, auto-detection is used: JSON (with
+/// preprocessing) is tried first, and if that fails, YAML is attempted.
 pub fn parse_config_stdin() -> Result<RtAppConfig, ConfigError> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
-    parse_config_str(&buf)
+    parse_str_autodetect(&buf)
 }
 
 fn parse_from_value(root: &serde_json::Value) -> Result<RtAppConfig, ConfigError> {
@@ -895,5 +1018,247 @@ mod tests {
         assert!(parsed.get("run").is_some());
         assert!(parsed.get("run1").is_some());
         assert!(parsed.get("sleep").is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // YAML parsing tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_yaml_minimal() {
+        let yaml = "
+tasks:
+  thread0:
+    run: 1000
+    sleep: 1000
+";
+        let config = parse_yaml_str(yaml).unwrap();
+        assert_eq!(config.tasks.len(), 1);
+        assert_eq!(config.tasks[0].name, "thread0");
+        assert_eq!(config.global.duration_secs, -1);
+    }
+
+    #[test]
+    fn parse_yaml_with_global() {
+        let yaml = "
+global:
+  duration: 5
+  calibration: CPU2
+  default_policy: SCHED_OTHER
+  pi_enabled: true
+  lock_pages: false
+  logdir: /tmp
+  log_basename: test
+  ftrace: \"main,task\"
+  gnuplot: true
+  io_device: /dev/zero
+  mem_buffer_size: 2097152
+  cumulative_slack: true
+  log_size: 4
+tasks:
+  t1:
+    run: 1000
+    sleep: 1000
+";
+        let config = parse_yaml_str(yaml).unwrap();
+        assert_eq!(config.global.duration_secs, 5);
+        assert!(config.global.pi_enabled);
+        assert!(!config.global.lock_pages);
+        assert!(config.global.gnuplot);
+        assert!(config.global.cumulative_slack);
+    }
+
+    #[test]
+    fn parse_yaml_matches_json_example1() {
+        let json_content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example1.json"))
+                .unwrap();
+        let json_config = parse_config_str(&json_content).unwrap();
+
+        let yaml_content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example1.yaml"))
+                .unwrap();
+        let yaml_config = parse_yaml_str(&yaml_content).unwrap();
+
+        // Verify key fields match between JSON and YAML parses
+        assert_eq!(json_config.tasks.len(), yaml_config.tasks.len());
+        assert_eq!(json_config.tasks[0].name, yaml_config.tasks[0].name);
+        assert_eq!(
+            json_config.global.duration_secs,
+            yaml_config.global.duration_secs
+        );
+        assert_eq!(json_config.global.gnuplot, yaml_config.global.gnuplot);
+        assert_eq!(json_config.global.ftrace, yaml_config.global.ftrace);
+        assert_eq!(json_config.global.pi_enabled, yaml_config.global.pi_enabled);
+        assert_eq!(json_config.global.lock_pages, yaml_config.global.lock_pages);
+        assert_eq!(
+            json_config.global.log_basename,
+            yaml_config.global.log_basename
+        );
+        assert_eq!(json_config.global.logdir, yaml_config.global.logdir);
+        assert_eq!(
+            json_config.global.default_policy,
+            yaml_config.global.default_policy
+        );
+        // Verify task event structure matches
+        assert_eq!(
+            json_config.tasks[0].phases.len(),
+            yaml_config.tasks[0].phases.len()
+        );
+        assert_eq!(
+            json_config.tasks[0].phases[0].events.len(),
+            yaml_config.tasks[0].phases[0].events.len()
+        );
+    }
+
+    #[test]
+    fn parse_yaml_matches_json_example4() {
+        let json_content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example4.json"))
+                .unwrap();
+        let json_config = parse_config_str(&json_content).unwrap();
+
+        let yaml_content =
+            std::fs::read_to_string(&fixture_path("tests/fixtures/tutorial/example4.yaml"))
+                .unwrap();
+        let yaml_config = parse_yaml_str(&yaml_content).unwrap();
+
+        assert_eq!(json_config.tasks.len(), yaml_config.tasks.len());
+        for (jt, yt) in json_config.tasks.iter().zip(yaml_config.tasks.iter()) {
+            assert_eq!(jt.name, yt.name);
+            assert_eq!(jt.phases.len(), yt.phases.len());
+            for (jp, yp) in jt.phases.iter().zip(yt.phases.iter()) {
+                assert_eq!(jp.events.len(), yp.events.len());
+            }
+        }
+    }
+
+    #[test]
+    fn parse_yaml_file_by_extension() {
+        let path = fixture_path("tests/fixtures/tutorial/example1.yaml");
+        let config = parse_config(Path::new(&path)).unwrap();
+        assert_eq!(config.tasks.len(), 1);
+        assert_eq!(config.tasks[0].name, "thread0");
+        assert_eq!(config.global.duration_secs, 2);
+    }
+
+    #[test]
+    fn config_format_from_extension() {
+        assert_eq!(
+            ConfigFormat::from_extension(Path::new("foo.json")),
+            Some(ConfigFormat::Json)
+        );
+        assert_eq!(
+            ConfigFormat::from_extension(Path::new("foo.yaml")),
+            Some(ConfigFormat::Yaml)
+        );
+        assert_eq!(
+            ConfigFormat::from_extension(Path::new("foo.yml")),
+            Some(ConfigFormat::Yaml)
+        );
+        assert_eq!(
+            ConfigFormat::from_extension(Path::new("foo.YAML")),
+            Some(ConfigFormat::Yaml)
+        );
+        assert_eq!(
+            ConfigFormat::from_extension(Path::new("foo.JSON")),
+            Some(ConfigFormat::Json)
+        );
+        assert_eq!(ConfigFormat::from_extension(Path::new("foo.txt")), None);
+        assert_eq!(ConfigFormat::from_extension(Path::new("foo")), None);
+    }
+
+    #[test]
+    fn autodetect_json_input() {
+        // JSON input should parse correctly via autodetect
+        let json = r#"{"tasks": {"t1": {"run": 1000, "sleep": 1000}}}"#;
+        let config = parse_str_autodetect(json).unwrap();
+        assert_eq!(config.tasks.len(), 1);
+    }
+
+    #[test]
+    fn autodetect_yaml_input() {
+        // YAML input should parse correctly via autodetect (JSON fails, YAML succeeds)
+        let yaml = "
+tasks:
+  t1:
+    run: 1000
+    sleep: 1000
+";
+        let config = parse_str_autodetect(yaml).unwrap();
+        assert_eq!(config.tasks.len(), 1);
+    }
+
+    #[test]
+    fn yaml_value_to_json_scalars() {
+        assert_eq!(
+            yaml_value_to_json(serde_yaml::Value::Null),
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            yaml_value_to_json(serde_yaml::Value::Bool(true)),
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(
+            yaml_value_to_json(serde_yaml::Value::String("hello".into())),
+            serde_json::Value::String("hello".into())
+        );
+    }
+
+    #[test]
+    fn yaml_value_to_json_numbers() {
+        // Integer
+        let yaml_int: serde_yaml::Value = serde_yaml::from_str("42").unwrap();
+        let json_int = yaml_value_to_json(yaml_int);
+        assert_eq!(json_int, serde_json::json!(42));
+
+        // Negative integer
+        let yaml_neg: serde_yaml::Value = serde_yaml::from_str("-1").unwrap();
+        let json_neg = yaml_value_to_json(yaml_neg);
+        assert_eq!(json_neg, serde_json::json!(-1));
+
+        // Float
+        let yaml_float: serde_yaml::Value = serde_yaml::from_str("3.14").unwrap();
+        let json_float = yaml_value_to_json(yaml_float);
+        assert!(json_float.as_f64().unwrap() - 3.14 < 0.001);
+    }
+
+    #[test]
+    fn yaml_value_to_json_sequence() {
+        let yaml: serde_yaml::Value = serde_yaml::from_str("[1, 2, 3]").unwrap();
+        let json = yaml_value_to_json(yaml);
+        assert_eq!(json, serde_json::json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn yaml_value_to_json_mapping() {
+        let yaml: serde_yaml::Value = serde_yaml::from_str("a: 1\nb: hello").unwrap();
+        let json = yaml_value_to_json(yaml);
+        assert_eq!(json["a"], serde_json::json!(1));
+        assert_eq!(json["b"], serde_json::json!("hello"));
+    }
+
+    #[test]
+    fn parse_yaml_with_comments() {
+        // YAML natively supports comments with #
+        let yaml = "
+# This is a YAML comment
+tasks:
+  thread0:
+    run: 1000   # inline comment
+    sleep: 1000
+";
+        let config = parse_yaml_str(yaml).unwrap();
+        assert_eq!(config.tasks.len(), 1);
+    }
+
+    #[test]
+    fn parse_yaml_missing_tasks_error() {
+        let yaml = "
+global:
+  duration: 5
+";
+        let result = parse_yaml_str(yaml);
+        assert!(result.is_err());
     }
 }

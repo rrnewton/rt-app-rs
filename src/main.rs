@@ -2,7 +2,7 @@
 //!
 //! This is the main entry point that orchestrates the full pipeline:
 //! 1. Parse CLI arguments
-//! 2. Read and parse JSON configuration
+//! 2. Read and parse JSON or YAML configuration
 //! 3. Convert config types to runtime types
 //! 4. Run CPU calibration (unless ns_per_loop is given directly)
 //! 5. Build the engine state
