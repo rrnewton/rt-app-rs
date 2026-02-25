@@ -23,18 +23,14 @@ pub const DEFAULT_MEM_BUF_SIZE: usize = 4 * 1024 * 1024;
 // Calibration
 // ---------------------------------------------------------------------------
 
-/// The `calibration` field can be either an integer (ns-per-loop), a string
-/// like `"CPU0"`, `"CPU3"`, or `"precise"`.
+/// The `calibration` field can be either an integer (ns-per-loop) or a string
+/// like `"CPU0"`, `"CPU3"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Calibration {
     /// Use the given ns-per-loop value directly (skip calibration).
     NsPerLoop(u64),
     /// Calibrate on the specified CPU number.
     Cpu(u32),
-    /// Precise mode: spin on `clock_gettime(CLOCK_MONOTONIC)` for exact
-    /// wall-clock duration instead of using calibrated busy-loop iterations.
-    /// No calibration phase runs.
-    Precise,
 }
 
 impl Default for Calibration {
@@ -56,8 +52,7 @@ impl<'de> Deserialize<'de> for Calibration {
             type Value = Calibration;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter
-                    .write_str("an integer (ns-per-loop), a string like \"CPU0\", or \"precise\"")
+                formatter.write_str("an integer (ns-per-loop) or a string like \"CPU0\"")
             }
 
             fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
@@ -72,9 +67,6 @@ impl<'de> Deserialize<'de> for Calibration {
             }
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                if v == "precise" {
-                    return Ok(Calibration::Precise);
-                }
                 parse_cpu_string(v).map_err(E::custom)
             }
         }
@@ -453,10 +445,13 @@ mod tests {
     }
 
     #[test]
-    fn calibration_precise() {
+    fn calibration_precise_now_rejected() {
         let json = serde_json::json!({"calibration": "precise"});
-        let g = parse_global(Some(&json)).unwrap();
-        assert_eq!(g.calibration, Calibration::Precise);
+        let result = parse_global(Some(&json));
+        assert!(
+            result.is_err(),
+            "\"precise\" calibration should be rejected"
+        );
     }
 
     #[test]
