@@ -51,8 +51,12 @@ pub enum CpuBurnMode {
 // ---------------------------------------------------------------------------
 
 /// Spin on `clock_gettime(CLOCK_MONOTONIC)` until `duration_ns` nanoseconds
-/// have elapsed. Uses `std::hint::spin_loop()` (emits PAUSE on x86) to be
-/// friendly to hyper-threading siblings.
+/// have elapsed.
+///
+/// Note: we intentionally do NOT use `std::hint::spin_loop()` (PAUSE on x86)
+/// here. The C rt-app has no such hint in its busy loops, and we want
+/// consistent CPU behavior between the two implementations — same scheduler
+/// visibility, same DVFS response, same hyper-threading impact.
 pub fn spin_wait_ns(duration_ns: u64) {
     if duration_ns == 0 {
         return;
@@ -61,7 +65,6 @@ pub fn spin_wait_ns(duration_ns: u64) {
     let start_ns = timespec_to_nsec(&start);
     let target_ns = start_ns + duration_ns;
     loop {
-        std::hint::spin_loop();
         let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
         if timespec_to_nsec(&now) >= target_ns {
             break;
