@@ -61,7 +61,7 @@ The `global` object defines parameters for the whole use case:
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `duration` | Integer | Duration of the use case in seconds. All threads will be killed once the duration has elapsed. If `-1`, the use case will run indefinitely until all threads kill themselves (e.g., if a finite number of loops has been defined) or a signal is received. | `-1` |
-| `calibration` | String or Integer | A string defines the CPU used to calibrate the ns-per-loop value (e.g., `"CPU0"`). An integer skips calibration and uses that value directly as ns per loop. The string `"precise"` enables precise mode: `run` and `runtime` events spin on `clock_gettime(CLOCK_MONOTONIC)` for exact wall-clock duration instead of using calibrated busy-loop iterations; no calibration phase runs and the `perf` metric is 0. | `"CPU0"` |
+| `calibration` | String or Integer | A string defines the CPU used to calibrate the ns-per-loop value (e.g., `"CPU0"`). An integer skips calibration and uses that value directly as ns per loop. | `"CPU0"` |
 | `default_policy` | String | Default scheduling policy of threads. | `"SCHED_OTHER"` |
 | `pi_enabled` | Boolean | Enable priority inheritance for mutexes. | `false` |
 | `lock_pages` | Boolean | Lock memory pages in RAM. Prevents RT threads from stalling while a page is moved from swap. Only possible for non-CFS tasks. | `true` |
@@ -324,10 +324,26 @@ workload whose duration varies with CPU frequency or compute capacity.
 
 ### `runtime`
 
-**Type:** Integer (microseconds)
+**Type:** Integer (microseconds) or Object
 
 Similar to `run`, but runs for a specific wall-clock amount of time
-irrespective of CPU compute capacity or frequency.
+irrespective of CPU compute capacity or frequency. The default mode
+(`"loadwait"`) executes real FPU workload in short chunks while checking the
+clock after each chunk, matching upstream C rt-app behavior.
+
+An object form selects the execution mode:
+
+```jsonc
+"runtime": {"duration": 10000, "mode": "clockonly"}
+```
+
+| Mode | Description |
+|------|-------------|
+| `"loadwait"` | (default) Real CPU workload in 32 µs chunks with clock checks. |
+| `"clockonly"` | Pure `clock_gettime` spin-wait for exact wall-clock duration; no FPU workload generated. |
+
+The integer form `"runtime": 10000` is equivalent to
+`"runtime": {"duration": 10000, "mode": "loadwait"}`.
 
 ### `sleep`
 

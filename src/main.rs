@@ -27,7 +27,7 @@ use rt_app_rs::config::{parse_config, parse_config_stdin, ConfigError, RtAppConf
 use rt_app_rs::conversions::{
     build_resource_handles, log_capacity_from_config, task_config_to_thread_data, BarrierCounter,
 };
-use rt_app_rs::engine::calibration::{calibrate_cpu_cycles, CpuBurnMode, NsPerLoop};
+use rt_app_rs::engine::calibration::{calibrate_cpu_cycles, NsPerLoop};
 use rt_app_rs::engine::{create_thread, shutdown, EngineState, ThreadHandle};
 use rt_app_rs::types::{AppOptions, ThreadIndex};
 use rt_app_rs::utils::timespec_to_nsec;
@@ -136,18 +136,12 @@ fn run(cli: &Cli) -> Result<(), AppError> {
     // Step 3: Convert config to runtime types
     let opts = AppOptions::from(&config.global);
 
-    // Step 4: Determine CPU burn mode
-    let cpu_burn_mode = if opts.precise_mode {
-        info!("using precise mode (clock_gettime spin-wait)");
-        CpuBurnMode::Precise
-    } else {
-        let ns_per_loop = run_calibration(&config, &opts)?;
-        info!("calibration: {} ns/loop", ns_per_loop.0);
-        CpuBurnMode::Calibrated(ns_per_loop)
-    };
+    // Step 4: Run calibration
+    let ns_per_loop = run_calibration(&config, &opts)?;
+    info!("calibration: {} ns/loop", ns_per_loop.0);
 
     // Step 5: Build engine state
-    let state = build_engine_state(&config, opts, cpu_burn_mode)?;
+    let state = build_engine_state(&config, opts, ns_per_loop)?;
     let state = Arc::new(state);
 
     // Step 6: Install signal handlers
@@ -230,7 +224,7 @@ fn run_calibration(_config: &RtAppConfig, opts: &AppOptions) -> Result<NsPerLoop
 fn build_engine_state(
     config: &RtAppConfig,
     opts: AppOptions,
-    cpu_burn_mode: CpuBurnMode,
+    ns_per_loop: NsPerLoop,
 ) -> Result<EngineState, AppError> {
     // Build barrier counter to determine barrier participant counts
     let barrier_counter = BarrierCounter::from_tasks(&config.tasks, &config.resources);
@@ -248,7 +242,7 @@ fn build_engine_state(
         continue_running: AtomicBool::new(true),
         thread_failed: AtomicBool::new(false),
         running_threads: AtomicI32::new(0),
-        cpu_burn_mode,
+        ns_per_loop,
         resources,
         opts,
         t_zero_ns: Mutex::new(None),

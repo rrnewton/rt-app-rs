@@ -214,13 +214,53 @@ fn parse_duration_event(
     value: &Value,
     kind: EventKind,
 ) -> Result<EventConfig, ConfigError> {
-    let duration = value
-        .as_i64()
-        .ok_or_else(|| ConfigError::InvalidEventValue(key.to_owned(), "expected integer"))?;
+    // Runtime supports both integer and object form:
+    //   "runtime": 50000
+    //   "runtime": {"duration": 50000, "mode": "clockonly"}
+    let (duration, runtime_mode) = if let Some(n) = value.as_i64() {
+        (n, None)
+    } else if kind == EventKind::Runtime {
+        if let Some(obj) = value.as_object() {
+            let dur = obj
+                .get("duration")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| {
+                    ConfigError::InvalidEventValue(
+                        key.to_owned(),
+                        "runtime object requires \"duration\" integer field",
+                    )
+                })?;
+            let mode = obj
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("loadwait");
+            (dur, Some(mode))
+        } else {
+            return Err(ConfigError::InvalidEventValue(
+                key.to_owned(),
+                "expected integer or {\"duration\": N, \"mode\": \"...\"}",
+            ));
+        }
+    } else {
+        return Err(ConfigError::InvalidEventValue(
+            key.to_owned(),
+            "expected integer",
+        ));
+    };
 
     let event_type = match kind {
         EventKind::Sleep => ResourceType::Sleep,
-        EventKind::Runtime => ResourceType::Runtime,
+        EventKind::Runtime => match runtime_mode {
+            Some("clockonly") => ResourceType::RuntimeClockOnly,
+            Some("loadwait") | None => ResourceType::Runtime,
+            Some(other) => {
+                let _ = other;
+                return Err(ConfigError::InvalidEventValue(
+                    key.to_owned(),
+                    "unknown runtime mode (expected \"loadwait\" or \"clockonly\")",
+                ));
+            }
+        },
         _ => ResourceType::Run,
     };
 
@@ -1241,5 +1281,91 @@ mod tests {
         let mut res = make_resources();
         let tasks = parse_tasks(&json, SchedulingPolicy::Other, &mut res).unwrap();
         assert_eq!(tasks[0].delay_usec, 5000);
+    }
+
+    #[test]
+    fn runtime_integer_backward_compat() {
+        let json = serde_json::json!({
+            "t1": {
+                "runtime": 50000,
+                "sleep": 1000
+            }
+        });
+        let mut res = make_resources();
+        let tasks = parse_tasks(&json, SchedulingPolicy::Other, &mut res).unwrap();
+        let rt_event = &tasks[0].phases[0].events[0];
+        assert_eq!(rt_event.event_type, ResourceType::Runtime);
+        assert_eq!(rt_event.duration_usec, 50000);
+    }
+
+    #[test]
+    fn runtime_object_clockonly() {
+        let json = serde_json::json!({
+            "t1": {
+                "runtime": {"duration": 1000, "mode": "clockonly"},
+                "sleep": 1000
+            }
+        });
+        let mut res = make_resources();
+        let tasks = parse_tasks(&json, SchedulingPolicy::Other, &mut res).unwrap();
+        let rt_event = &tasks[0].phases[0].events[0];
+        assert_eq!(rt_event.event_type, ResourceType::RuntimeClockOnly);
+        assert_eq!(rt_event.duration_usec, 1000);
+    }
+
+    #[test]
+    fn runtime_object_loadwait() {
+        let json = serde_json::json!({
+            "t1": {
+                "runtime": {"duration": 2000, "mode": "loadwait"},
+                "sleep": 1000
+            }
+        });
+        let mut res = make_resources();
+        let tasks = parse_tasks(&json, SchedulingPolicy::Other, &mut res).unwrap();
+        let rt_event = &tasks[0].phases[0].events[0];
+        assert_eq!(rt_event.event_type, ResourceType::Runtime);
+        assert_eq!(rt_event.duration_usec, 2000);
+    }
+
+    #[test]
+    fn runtime_object_default_mode() {
+        let json = serde_json::json!({
+            "t1": {
+                "runtime": {"duration": 3000},
+                "sleep": 1000
+            }
+        });
+        let mut res = make_resources();
+        let tasks = parse_tasks(&json, SchedulingPolicy::Other, &mut res).unwrap();
+        let rt_event = &tasks[0].phases[0].events[0];
+        assert_eq!(rt_event.event_type, ResourceType::Runtime);
+        assert_eq!(rt_event.duration_usec, 3000);
+    }
+
+    #[test]
+    fn runtime_object_invalid_mode() {
+        let json = serde_json::json!({
+            "t1": {
+                "runtime": {"duration": 1000, "mode": "turbo"},
+                "sleep": 1000
+            }
+        });
+        let mut res = make_resources();
+        let result = parse_tasks(&json, SchedulingPolicy::Other, &mut res);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn runtime_object_missing_duration() {
+        let json = serde_json::json!({
+            "t1": {
+                "runtime": {"mode": "clockonly"},
+                "sleep": 1000
+            }
+        });
+        let mut res = make_resources();
+        let result = parse_tasks(&json, SchedulingPolicy::Other, &mut res);
+        assert!(result.is_err());
     }
 }

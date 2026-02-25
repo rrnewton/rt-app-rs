@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **`"calibration": "precise"` global mode** — this mode made all run/runtime
+  events use clock-only spinning, which is too coarse. Use per-event
+  `"runtime": {"duration": N, "mode": "clockonly"}` instead.
+- **`CpuBurnMode` enum** — with no global precise mode, the engine uses
+  `NsPerLoop` directly.
+
+### Added
+
+- **Per-event runtime mode** via object-form syntax:
+  `"runtime": {"duration": N, "mode": "clockonly"}` for exact wall-clock spin
+  without FPU workload. The default `"runtime": N` (integer form) and
+  `"mode": "loadwait"` continue to use calibrated busy-loop chunks with
+  clock checking, matching upstream C rt-app behavior.
+
 ## [0.2.0] - 2026-02-22
 
 ### Added

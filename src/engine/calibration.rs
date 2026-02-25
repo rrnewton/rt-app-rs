@@ -32,21 +32,6 @@ impl NsPerLoop {
 }
 
 // ---------------------------------------------------------------------------
-// CpuBurnMode — how the engine burns CPU time
-// ---------------------------------------------------------------------------
-
-/// How the engine executes `run` and `runtime` events.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CpuBurnMode {
-    /// Use the calibrated busy-loop: convert requested duration to a loop
-    /// count via `NsPerLoop`, then call `waste_cpu_cycles`.
-    Calibrated(NsPerLoop),
-    /// Spin on `clock_gettime(CLOCK_MONOTONIC)` for exact wall-clock
-    /// duration. No calibration phase needed.
-    Precise,
-}
-
-// ---------------------------------------------------------------------------
 // spin_wait_ns — precise wall-clock spin
 // ---------------------------------------------------------------------------
 
@@ -340,17 +325,6 @@ mod tests {
         assert!(
             elapsed_ns < 50_000_000,
             "spin_wait_ns took unexpectedly long: {elapsed_ns} ns"
-        );
-    }
-
-    #[test]
-    fn cpu_burn_mode_variants() {
-        let calibrated = CpuBurnMode::Calibrated(NsPerLoop(100));
-        let precise = CpuBurnMode::Precise;
-        assert_ne!(calibrated, precise);
-        assert_eq!(
-            CpuBurnMode::Calibrated(NsPerLoop(100)),
-            CpuBurnMode::Calibrated(NsPerLoop(100))
         );
     }
 

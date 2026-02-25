@@ -27,6 +27,13 @@ fn example_fixture(name: &str) -> PathBuf {
     fixtures_dir().join(name)
 }
 
+/// Return the path to a bug_finding failure fixture.
+fn failure_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/failures")
+        .join(name)
+}
+
 /// Parse a fixture file and return the config, panicking with a clear message
 /// on failure.
 fn parse_fixture(path: &Path) -> rt_app_rs::config::RtAppConfig {
@@ -840,13 +847,52 @@ fn cross_module_ftrace_levels_from_config() {
 }
 
 #[test]
-fn cross_module_calibration_precise() {
-    use rt_app_rs::config::global::Calibration;
-
+fn cross_module_calibration_precise_now_rejected() {
     let json =
         r#"{"global": {"calibration": "precise"}, "tasks": {"t1": {"run": 1000, "sleep": 1000}}}"#;
+    let result = parse_config_str(json);
+    assert!(
+        result.is_err(),
+        "\"calibration\": \"precise\" should be rejected"
+    );
+}
+
+#[test]
+fn cross_module_runtime_clockonly() {
+    let json =
+        r#"{"tasks": {"t1": {"runtime": {"duration": 1000, "mode": "clockonly"}, "sleep": 1000}}}"#;
     let config = parse_config_str(json).unwrap();
-    assert_eq!(config.global.calibration, Calibration::Precise);
+    let rt_event = config.tasks[0].phases[0]
+        .events
+        .iter()
+        .find(|e| e.event_type == ResourceType::RuntimeClockOnly)
+        .expect("expected RuntimeClockOnly event");
+    assert_eq!(rt_event.duration_usec, 1000);
+}
+
+#[test]
+fn cross_module_runtime_object_loadwait() {
+    let json =
+        r#"{"tasks": {"t1": {"runtime": {"duration": 2000, "mode": "loadwait"}, "sleep": 1000}}}"#;
+    let config = parse_config_str(json).unwrap();
+    let rt_event = config.tasks[0].phases[0]
+        .events
+        .iter()
+        .find(|e| e.event_type == ResourceType::Runtime)
+        .expect("expected Runtime event");
+    assert_eq!(rt_event.duration_usec, 2000);
+}
+
+#[test]
+fn cross_module_runtime_integer_backward_compat() {
+    let json = r#"{"tasks": {"t1": {"runtime": 50000, "sleep": 1000}}}"#;
+    let config = parse_config_str(json).unwrap();
+    let rt_event = config.tasks[0].phases[0]
+        .events
+        .iter()
+        .find(|e| e.event_type == ResourceType::Runtime)
+        .expect("expected Runtime event");
+    assert_eq!(rt_event.duration_usec, 50000);
 }
 
 #[test]
@@ -974,4 +1020,92 @@ fn cross_module_complex_workload_config() {
         .iter()
         .any(|r| r.name == "sync_barrier" && r.resource_type == ResourceType::Barrier);
     assert!(has_barrier);
+}
+
+// ===========================================================================
+// D) Bug-finding failure fixture tests
+// ===========================================================================
+//
+// These configs were discovered by the fuzzer (bug_finding/) and are preserved
+// because they triggered divergences between the C original and the Rust port.
+// We parse them here to ensure they remain valid inputs.
+
+#[test]
+fn parse_failure_11_timer_phases() {
+    let config = parse_fixture(&failure_fixture("failure_11.json"));
+    assert_eq!(config.tasks.len(), 1);
+    assert_eq!(config.tasks[0].name, "thread0");
+    assert_eq!(config.tasks[0].phases.len(), 3);
+    assert_eq!(
+        config.tasks[0].sched.as_ref().unwrap().policy,
+        SchedulingPolicy::RoundRobin
+    );
+    assert_eq!(config.global.duration_secs, 1);
+    // phase0 has timer referencing timer0
+    let phase0_timer = config.tasks[0].phases[0]
+        .events
+        .iter()
+        .any(|e| e.event_type == ResourceType::Timer);
+    assert!(phase0_timer, "phase0 should have a timer event");
+    // phase1 has runtime events
+    let phase1_runtime = config.tasks[0].phases[1]
+        .events
+        .iter()
+        .any(|e| e.event_type == ResourceType::Runtime);
+    assert!(phase1_runtime, "phase1 should have runtime events");
+    // Two timer resources declared
+    let timer_count = config
+        .resources
+        .iter()
+        .filter(|r| r.resource_type == ResourceType::Timer)
+        .count();
+    assert_eq!(timer_count, 2, "expected 2 timer resources");
+}
+
+#[test]
+fn parse_failure_22_multi_instance_mem() {
+    let config = parse_fixture(&failure_fixture("failure_22.json"));
+    assert_eq!(config.tasks.len(), 2);
+    assert_eq!(config.global.duration_secs, 1);
+    assert_eq!(config.global.default_policy, SchedulingPolicy::Fifo);
+    let t0 = config.tasks.iter().find(|t| t.name == "thread0").unwrap();
+    assert_eq!(t0.num_instances, 2);
+    assert_eq!(t0.sched.as_ref().unwrap().policy, SchedulingPolicy::Fifo);
+    // phase0 has mem event
+    let has_mem = t0.phases[0]
+        .events
+        .iter()
+        .any(|e| e.event_type == ResourceType::Mem);
+    assert!(has_mem, "thread0 phase0 should have a mem event");
+    let t1 = config.tasks.iter().find(|t| t.name == "thread1").unwrap();
+    assert_eq!(t1.num_instances, 2);
+}
+
+#[test]
+fn parse_failure_23_mutex_resource() {
+    let config = parse_fixture(&failure_fixture("failure_23.json"));
+    assert_eq!(config.tasks.len(), 1);
+    assert_eq!(config.tasks[0].name, "thread0");
+    assert_eq!(config.global.duration_secs, 1);
+    // Has mutex and two timer resources
+    let has_mutex = config
+        .resources
+        .iter()
+        .any(|r| r.name == "mutex0" && r.resource_type == ResourceType::Mutex);
+    assert!(has_mutex, "expected mutex0 resource");
+    let timer_count = config
+        .resources
+        .iter()
+        .filter(|r| r.resource_type == ResourceType::Timer)
+        .count();
+    assert_eq!(timer_count, 2, "expected 2 timer resources");
+}
+
+#[test]
+fn all_failure_fixture_files_exist() {
+    let failure_files = ["failure_11.json", "failure_22.json", "failure_23.json"];
+    for name in &failure_files {
+        let path = failure_fixture(name);
+        assert!(path.exists(), "missing failure fixture: {name}");
+    }
 }

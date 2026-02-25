@@ -1,0 +1,54 @@
+// Divergence: Timeout mismatch: C timed out=true, Rust timed out=false
+// Iteration: 11
+{
+  "global": {
+    "calibration": "CPU1",
+    "default_policy": "SCHED_OTHER",
+    "duration": 1,
+    "gnuplot": false,
+    "lock_pages": false,
+    "pi_enabled": false
+  },
+  "resources": {
+    "timer0": {
+      "type": "timer"
+    },
+    "timer1": {
+      "type": "timer"
+    }
+  },
+  "tasks": {
+    "thread0": {
+      "loop": -1,
+      "phases": {
+        "phase0": {
+          "loop": 4,
+          "run2": 32133,
+          "sleep0": 5101,
+          "sleep1": 32857,
+          "timer3": {
+            "period": 56991,
+            "ref": "timer0"
+          }
+        },
+        "phase1": {
+          "loop": 4,
+          "run2": 30096,
+          "run3": 23145,
+          "runtime0": 15013,
+          "runtime1": 22345,
+          "timer4": {
+            "period": 96129,
+            "ref": "timer0"
+          }
+        },
+        "phase2": {
+          "loop": 9,
+          "sleep0": 6535
+        }
+      },
+      "policy": "SCHED_RR",
+      "priority": 8
+    }
+  }
+}

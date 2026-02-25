@@ -208,6 +208,8 @@ pub enum ResourceType {
     IoRun,
     #[serde(rename = "runtime")]
     Runtime,
+    #[serde(rename = "runtime_clockonly")]
+    RuntimeClockOnly,
     #[serde(rename = "yield")]
     Yield,
     #[serde(rename = "barrier")]
@@ -236,6 +238,7 @@ impl fmt::Display for ResourceType {
             Self::Mem => "mem",
             Self::IoRun => "iorun",
             Self::Runtime => "runtime",
+            Self::RuntimeClockOnly => "runtime_clockonly",
             Self::Yield => "yield",
             Self::Barrier => "barrier",
             Self::Fork => "fork",
@@ -266,6 +269,7 @@ impl FromStr for ResourceType {
             "mem" => Ok(Self::Mem),
             "iorun" => Ok(Self::IoRun),
             "runtime" => Ok(Self::Runtime),
+            "runtime_clockonly" => Ok(Self::RuntimeClockOnly),
             "yield" => Ok(Self::Yield),
             "barrier" => Ok(Self::Barrier),
             "fork" => Ok(Self::Fork),
@@ -547,9 +551,6 @@ pub struct AppOptions {
     /// Calibrated nanoseconds per busy-loop iteration.
     #[serde(default)]
     pub calib_ns_per_loop: Option<u64>,
-    /// Whether precise calibration mode is active (spin on clock_gettime).
-    #[serde(default)]
-    pub precise_mode: bool,
     /// Whether priority inheritance is enabled for mutexes.
     #[serde(default)]
     pub pi_enabled: bool,
@@ -811,6 +812,7 @@ mod tests {
             ResourceType::Mem,
             ResourceType::IoRun,
             ResourceType::Runtime,
+            ResourceType::RuntimeClockOnly,
             ResourceType::Yield,
             ResourceType::Barrier,
             ResourceType::Fork,

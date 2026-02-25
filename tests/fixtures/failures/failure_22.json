@@ -1,0 +1,35 @@
+// Divergence: Timeout mismatch: C timed out=true, Rust timed out=false
+// Iteration: 22
+{
+  "global": {
+    "calibration": "CPU1",
+    "default_policy": "SCHED_FIFO",
+    "duration": 1,
+    "gnuplot": false,
+    "lock_pages": false,
+    "pi_enabled": false
+  },
+  "tasks": {
+    "thread0": {
+      "instance": 2,
+      "loop": 7,
+      "phases": {
+        "phase0": {
+          "loop": 10,
+          "mem1": 1410,
+          "run0": 3453,
+          "run2": 15088
+        }
+      },
+      "policy": "SCHED_FIFO",
+      "priority": 2
+    },
+    "thread1": {
+      "instance": 2,
+      "loop": 6,
+      "policy": "SCHED_OTHER",
+      "run": 7785,
+      "sleep": 26299
+    }
+  }
+}
