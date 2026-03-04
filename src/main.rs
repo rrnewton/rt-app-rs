@@ -51,7 +51,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     // Handle --print-template early exit
-    if cli.print_template {
+    if cli.print_template.is_some() {
         cli.print_template_and_exit();
         return ExitCode::from(EXIT_SUCCESS);
     }

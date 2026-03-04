@@ -220,6 +220,26 @@ fn parse_template() {
 }
 
 #[test]
+fn parse_template_yaml() {
+    let path = example_fixture("template.yaml");
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    let config = parse_yaml_str(&content)
+        .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
+    // YAML template has 2 tasks: thread0 and thread1
+    assert_eq!(config.tasks.len(), 2);
+    let t0 = config.tasks.iter().find(|t| t.name == "thread0").unwrap();
+    let t1 = config.tasks.iter().find(|t| t.name == "thread1").unwrap();
+    assert_eq!(t0.num_instances, 1);
+    assert_eq!(config.global.duration_secs, 6);
+    assert!(config.global.gnuplot);
+    // thread0 has run + sleep + timer events
+    assert_eq!(t0.phases[0].events.len(), 3);
+    // thread1 has 2 phases
+    assert_eq!(t1.phases.len(), 2);
+}
+
+#[test]
 fn parse_custom_slice() {
     let config = parse_fixture(&example_fixture("custom-slice.json"));
     assert_eq!(config.tasks.len(), 2);
@@ -347,6 +367,7 @@ fn all_fixture_files_exist() {
 
     let example_files = vec![
         "template.json",
+        "template.yaml",
         "custom-slice.json",
         "spreading-tasks.json",
         "browser-long.json",
@@ -361,8 +382,8 @@ fn all_fixture_files_exist() {
         assert!(path.exists(), "missing example fixture: {name}");
     }
 
-    // Total: 11 tutorial + 9 top-level = 20 fixtures
-    assert_eq!(tutorial_files.len() + example_files.len(), 20);
+    // Total: 11 tutorial + 10 top-level = 21 fixtures
+    assert_eq!(tutorial_files.len() + example_files.len(), 21);
 }
 
 // ===========================================================================

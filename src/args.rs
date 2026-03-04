@@ -77,8 +77,46 @@ impl std::str::FromStr for LogLevel {
     }
 }
 
+/// Format for `--print-template` output.
+///
+/// Controls whether the printed template is JSON (default, backward-compatible)
+/// or YAML.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateFormat {
+    /// Print the JSON template (default when no value is given).
+    Json,
+    /// Print the YAML template.
+    Yaml,
+}
+
+impl std::fmt::Display for TemplateFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Json => write!(f, "json"),
+            Self::Yaml => write!(f, "yaml"),
+        }
+    }
+}
+
+impl std::str::FromStr for TemplateFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "json" => Ok(Self::Json),
+            "yaml" | "yml" => Ok(Self::Yaml),
+            other => Err(format!(
+                "unknown template format '{other}'; expected 'json' or 'yaml'"
+            )),
+        }
+    }
+}
+
 /// The embedded template.json content for `--print-template`.
 const TEMPLATE_JSON: &str = include_str!("../doc/examples/template.json");
+
+/// The embedded template.yaml content for `--print-template=yaml`.
+const TEMPLATE_YAML: &str = include_str!("../doc/examples/template.yaml");
 
 /// rt-app-rs: a real-time workload simulator.
 ///
@@ -97,9 +135,17 @@ pub struct Cli {
     #[arg(short = 'l', long = "log-level", default_value_t = LogLevel::default())]
     pub log_level: LogLevel,
 
-    /// Print the JSON configuration template to stdout and exit.
-    #[arg(long = "print-template")]
-    pub print_template: bool,
+    /// Print a configuration template to stdout and exit.
+    ///
+    /// Accepts an optional format: `json` (default) or `yaml`.
+    /// Examples: `--print-template`, `--print-template=json`, `--print-template=yaml`.
+    #[arg(
+        long = "print-template",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "json",
+    )]
+    pub print_template: Option<TemplateFormat>,
 
     /// Path to a JSON or YAML task-set description file, or "-" to read from stdin.
     #[arg(value_name = "CONFIG", required_unless_present = "print_template")]
@@ -120,17 +166,26 @@ impl Cli {
         })
     }
 
-    /// Print the embedded template.json to stdout.
+    /// Print the embedded template to stdout in the requested format.
     ///
     /// Applies syntax highlighting if stdout is a TTY; otherwise prints raw.
     pub fn print_template_and_exit(&self) {
+        let format = self
+            .print_template
+            .expect("print_template_and_exit called without --print-template");
+
         let stdout = std::io::stdout();
         let use_color = stdout.is_terminal();
 
+        let (raw, colorizer): (&str, fn(&str) -> String) = match format {
+            TemplateFormat::Json => (TEMPLATE_JSON, colorize_json),
+            TemplateFormat::Yaml => (TEMPLATE_YAML, colorize_yaml),
+        };
+
         let output = if use_color {
-            colorize_json(TEMPLATE_JSON)
+            colorizer(raw)
         } else {
-            TEMPLATE_JSON.to_string()
+            raw.to_string()
         };
 
         let mut handle = stdout.lock();
@@ -322,6 +377,138 @@ fn colorize_keyword(
     }
 }
 
+/// Colorize YAML for terminal display.
+///
+/// Color scheme:
+/// - Comments (`#`): bright black (gray)
+/// - Keys (text before `:`): cyan
+/// - String values (after `:`): green
+/// - Numbers: yellow
+/// - Keywords (true/false/null): magenta
+fn colorize_yaml(input: &str) -> String {
+    let mut result = String::with_capacity(input.len() * 2);
+
+    for line in input.split_inclusive('\n') {
+        colorize_yaml_line(line, &mut result);
+    }
+    // Handle final line without trailing newline
+    if !input.ends_with('\n') && !input.is_empty() {
+        // split_inclusive already handled it
+    }
+    result
+}
+
+/// Colorize a single YAML line, appending to `result`.
+fn colorize_yaml_line(line: &str, result: &mut String) {
+    let trimmed = line.trim_end_matches('\n');
+
+    // Pure comment line (leading whitespace + #)
+    if trimmed.trim_start().starts_with('#') {
+        result.push_str(&trimmed.bright_black().to_string());
+        if line.ends_with('\n') {
+            result.push('\n');
+        }
+        return;
+    }
+
+    // Split on first '#' to separate content from inline comment
+    let (content, comment) = split_yaml_inline_comment(trimmed);
+
+    if let Some(colon_pos) = content.find(':') {
+        // Key portion (everything up to and including the colon)
+        let (key_part, after_colon) = content.split_at(colon_pos + 1);
+        result.push_str(&key_part.cyan().to_string());
+        colorize_yaml_value(after_colon, result);
+    } else {
+        // No colon — bare line (e.g. list item `- value`)
+        result.push_str(content);
+    }
+
+    if let Some(cmt) = comment {
+        result.push_str(&cmt.bright_black().to_string());
+    }
+
+    if line.ends_with('\n') {
+        result.push('\n');
+    }
+}
+
+/// Split a YAML line into (content, optional_comment).
+///
+/// The comment includes the leading `#` and any whitespace before it.
+fn split_yaml_inline_comment(line: &str) -> (&str, Option<&str>) {
+    // Walk through the line; skip `#` inside quoted strings.
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+
+    for (i, ch) in line.char_indices() {
+        match ch {
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            '#' if !in_single_quote && !in_double_quote => {
+                // Find the start of whitespace before `#`
+                let split = line[..i].trim_end().len();
+                return (&line[..split], Some(&line[split..]));
+            }
+            _ => {}
+        }
+    }
+    (line, None)
+}
+
+/// Colorize a YAML value (the text after `:`).
+fn colorize_yaml_value(value: &str, result: &mut String) {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        result.push_str(value);
+        return;
+    }
+
+    // Preserve leading whitespace
+    let leading_ws = &value[..value.len() - value.trim_start().len()];
+    result.push_str(leading_ws);
+
+    match trimmed {
+        "true" | "false" | "null" | "~" => {
+            result.push_str(&trimmed.magenta().to_string());
+        }
+        _ if looks_like_number(trimmed) => {
+            result.push_str(&trimmed.yellow().to_string());
+        }
+        _ => {
+            result.push_str(&trimmed.green().to_string());
+        }
+    }
+
+    // Trailing whitespace (before comment, if any — but comment is already split off)
+    let trailing_ws = &value[value.trim_end().len()..];
+    result.push_str(trailing_ws);
+}
+
+/// Heuristic: does this look like a YAML numeric scalar?
+fn looks_like_number(s: &str) -> bool {
+    // Matches integers, negative integers, floats
+    if s.is_empty() {
+        return false;
+    }
+    let s = if s.starts_with('-') || s.starts_with('+') {
+        &s[1..]
+    } else {
+        s
+    };
+    if s.is_empty() {
+        return false;
+    }
+    // Must start with digit
+    if !s.as_bytes()[0].is_ascii_digit() {
+        return false;
+    }
+    // Allow digits, dots, 'e', 'E' (basic float syntax)
+    s.bytes().all(|b| {
+        b.is_ascii_digit() || b == b'.' || b == b'e' || b == b'E' || b == b'+' || b == b'-'
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,9 +535,9 @@ mod tests {
 
     #[test]
     fn print_template_without_config() {
-        // --print-template should work without a config argument
+        // --print-template should work without a config argument (defaults to JSON)
         let cli = parse(&["rt-app-rs", "--print-template"]);
-        assert!(cli.print_template);
+        assert_eq!(cli.print_template, Some(TemplateFormat::Json));
         assert_eq!(cli.config_source(), None);
     }
 
@@ -358,7 +545,7 @@ mod tests {
     fn print_template_with_config() {
         // --print-template can also be used with a config argument
         let cli = parse(&["rt-app-rs", "--print-template", "taskset.json"]);
-        assert!(cli.print_template);
+        assert_eq!(cli.print_template, Some(TemplateFormat::Json));
         assert_eq!(
             cli.config_source(),
             Some(ConfigSource::File(PathBuf::from("taskset.json")))
@@ -366,14 +553,90 @@ mod tests {
     }
 
     #[test]
-    fn template_contains_expected_sections() {
-        // Verify the embedded template contains key sections
+    fn template_json_contains_expected_sections() {
+        // Verify the embedded JSON template contains key sections
         assert!(TEMPLATE_JSON.contains("\"global\""));
         assert!(TEMPLATE_JSON.contains("\"resources\""));
         assert!(TEMPLATE_JSON.contains("\"tasks\""));
         assert!(TEMPLATE_JSON.contains("\"phases\""));
         assert!(TEMPLATE_JSON.contains("SCHED_OTHER"));
         assert!(TEMPLATE_JSON.contains("calibration"));
+    }
+
+    #[test]
+    fn template_yaml_contains_expected_sections() {
+        // Verify the embedded YAML template contains key sections
+        assert!(TEMPLATE_YAML.contains("global:"));
+        assert!(TEMPLATE_YAML.contains("resources:"));
+        assert!(TEMPLATE_YAML.contains("tasks:"));
+        assert!(TEMPLATE_YAML.contains("phases:"));
+        assert!(TEMPLATE_YAML.contains("SCHED_OTHER"));
+        assert!(TEMPLATE_YAML.contains("calibration"));
+        // YAML template must mention the duplicate-key limitation
+        assert!(TEMPLATE_YAML.contains("YAML does not support duplicate keys"));
+    }
+
+    #[test]
+    fn print_template_json_explicit() {
+        let cli = parse(&["rt-app-rs", "--print-template=json"]);
+        assert_eq!(cli.print_template, Some(TemplateFormat::Json));
+        assert_eq!(cli.config_source(), None);
+    }
+
+    #[test]
+    fn print_template_yaml() {
+        let cli = parse(&["rt-app-rs", "--print-template=yaml"]);
+        assert_eq!(cli.print_template, Some(TemplateFormat::Yaml));
+        assert_eq!(cli.config_source(), None);
+    }
+
+    #[test]
+    fn print_template_none_when_absent() {
+        let cli = parse(&["rt-app-rs", "taskset.json"]);
+        assert_eq!(cli.print_template, None);
+    }
+
+    #[test]
+    fn template_format_display() {
+        assert_eq!(TemplateFormat::Json.to_string(), "json");
+        assert_eq!(TemplateFormat::Yaml.to_string(), "yaml");
+    }
+
+    #[test]
+    fn template_format_parse() {
+        assert_eq!(
+            "json".parse::<TemplateFormat>().unwrap(),
+            TemplateFormat::Json
+        );
+        assert_eq!(
+            "yaml".parse::<TemplateFormat>().unwrap(),
+            TemplateFormat::Yaml
+        );
+        assert_eq!(
+            "yml".parse::<TemplateFormat>().unwrap(),
+            TemplateFormat::Yaml
+        );
+        assert_eq!(
+            "JSON".parse::<TemplateFormat>().unwrap(),
+            TemplateFormat::Json
+        );
+        assert!("xml".parse::<TemplateFormat>().is_err());
+    }
+
+    #[test]
+    fn colorize_yaml_preserves_content() {
+        let input = "key: value  # comment\nnum: 42\nflag: true\n";
+        let colored = colorize_yaml(input);
+        let stripped = strip_ansi(&colored);
+        assert_eq!(stripped, input);
+    }
+
+    #[test]
+    fn colorize_yaml_handles_comment_only_lines() {
+        let input = "# This is a comment\nkey: value\n";
+        let colored = colorize_yaml(input);
+        let stripped = strip_ansi(&colored);
+        assert_eq!(stripped, input);
     }
 
     #[test]
