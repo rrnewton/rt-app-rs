@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-05
 
 ### Removed
 
@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without FPU workload. The default `"runtime": N` (integer form) and
   `"mode": "loadwait"` continue to use calibrated busy-loop chunks with
   clock checking, matching upstream C rt-app behavior.
+- **YAML config file support** — config files with `.yaml` or `.yml` extension
+  are now accepted alongside JSON. Uses serde_yaml for parsing with the same
+  config schema.
+- **`--print-template=yaml` CLI option** — prints a comprehensive YAML config
+  template as an alternative to `--print-template` (JSON). Both formats
+  document all available options with inline comments.
 
 ## [0.2.0] - 2026-02-22
 
@@ -111,5 +117,6 @@ config format, same output formats, same runtime behavior.
 - thiserror for typed errors
 - signal-hook for graceful signal handling
 
+[0.3.0]: https://github.com/rrnewton/rt-app-rs/releases/tag/v0.3.0
 [0.2.0]: https://github.com/rrnewton/rt-app-rs/releases/tag/v0.2.0
 [0.1.1]: https://github.com/rrnewton/rt-app-rs/releases/tag/v0.1.1
